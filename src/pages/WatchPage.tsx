@@ -71,10 +71,11 @@ const WatchPage = () => {
   const [selectedAudio, setSelectedAudio] = useState(audioParam || "");
   const [audioTypes, setAudioTypes] = useState<string[]>([]);
   const [currentProviderIdx, setCurrentProviderIdx] = useState(0);
+  const [playerLink, setPlayerLink] = useState<string | null>(null);
 
   const isMovie = type === "movie";
   const embedUrls = buildEmbedUrls(imdbId, id || "", type || "movie", season, episode);
-  const currentEmbedUrl = embedUrls[currentProviderIdx] || embedUrls[0];
+  const currentEmbedUrl = playerLink || embedUrls[currentProviderIdx] || embedUrls[0];
   const proxyUrl = `${SUPABASE_URL}/functions/v1/proxy-player?url=${encodeURIComponent(currentEmbedUrl)}`;
 
   // Load audio types from DB
@@ -117,6 +118,12 @@ const WatchPage = () => {
         }]);
         setPhase("playing");
         return;
+      }
+
+      // Use player_link if available for better proxy fallback
+      if (data?.player_link) {
+        console.log(`[WatchPage] Got player link for proxy: ${data.player_link}`);
+        setPlayerLink(data.player_link);
       }
     } catch {
       // Silent fail

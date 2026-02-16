@@ -140,6 +140,9 @@ const ANTI_AD_CSS = `
 
 const ALLOWED_DOMAINS = [
   "embedplayapi.site",
+  "embedplay.click",
+  "vidsrc-embed.ru",
+  "cloudnestra.com",
   "embed.su",
   "vidlink.pro",
   "vembed.stream", "vembed.online",

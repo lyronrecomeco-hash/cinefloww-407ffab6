@@ -59,16 +59,16 @@ Deno.serve(async (req) => {
       });
     }
 
-    // 2. Build EmbedPlay URL - uses IMDB for movies, TMDB for series
+    // 2. Build EmbedPlay embed URL
     const isMovie = cType === "movie";
     const embedId = imdb_id || tmdb_id;
-    const embedPlayUrl = isMovie
+    const embedPageUrl = isMovie
       ? `https://embedplayapi.site/embed/${embedId}`
       : `https://embedplayapi.site/embed/${embedId}/${season || 1}/${episode || 1}`;
 
-    console.log(`[extract] Fetching: ${embedPlayUrl}`);
+    console.log(`[extract] Fetching embed page: ${embedPageUrl}`);
 
-    const response = await fetch(embedPlayUrl, {
+    const pageRes = await fetch(embedPageUrl, {
       headers: {
         "User-Agent": UA,
         "Referer": "https://embedplayapi.site/",
@@ -77,70 +77,151 @@ Deno.serve(async (req) => {
       redirect: "follow",
     });
 
-    if (!response.ok) {
-      return new Response(JSON.stringify({ error: `Provider returned ${response.status}`, embed_url: embedPlayUrl }), {
+    if (!pageRes.ok) {
+      return new Response(JSON.stringify({ error: `EmbedPlay returned ${pageRes.status}` }), {
         status: 502,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const html = await response.text();
+    const html = await pageRes.text();
 
-    // 3. Try regex patterns to find video URLs
-    const patterns = [
-      /file\s*:\s*["']([^"']+\.m3u8[^"']*)/gi,
-      /src\s*:\s*["']([^"']+\.m3u8[^"']*)/gi,
-      /source\s*:\s*["']([^"']+\.m3u8[^"']*)/gi,
-      /["'](https?:\/\/[^"'\s]+\.m3u8[^"'\s]*)/gi,
-      /["'](https?:\/\/[^"'\s]+\.mp4[^"'\s]*)/gi,
-      /file\s*:\s*["']([^"']+\.mp4[^"']*)/gi,
-    ];
+    // 3. Parse movie ID and server IDs from the embed page
+    const movieIdMatch = html.match(/data-movie-id="([^"]+)"/);
+    const movieId = movieIdMatch?.[1];
 
-    let videoUrl: string | null = null;
-    let videoType: "m3u8" | "mp4" = "m3u8";
-
-    for (const pattern of patterns) {
-      const match = pattern.exec(html);
-      if (match?.[1]) {
-        videoUrl = match[1];
-        videoType = videoUrl.includes(".mp4") ? "mp4" : "m3u8";
-        break;
-      }
+    if (!movieId) {
+      console.log("[extract] Could not find data-movie-id in embed page");
+      return new Response(JSON.stringify({ error: "Movie not found on EmbedPlay", embed_url: embedPageUrl }), {
+        status: 404,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
-    // 4. Follow iframe sources
-    if (!videoUrl) {
-      const iframeSrcs = [...html.matchAll(/src=["'](https?:\/\/[^"']+)["']/gi)].map(m => m[1]);
-      for (const url of iframeSrcs) {
-        if (url.includes("embed") || url.includes("player") || url.includes("stream")) {
-          try {
-            console.log(`[extract] Following iframe: ${url}`);
-            const iframeRes = await fetch(url, {
-              headers: { "User-Agent": UA, "Referer": "https://embedplayapi.site/" },
-              redirect: "follow",
-            });
-            const iframeHtml = await iframeRes.text();
+    // Get all server IDs
+    const serverMatches = [...html.matchAll(/class="server[^"]*"\s+data-id="([^"]+)"/g)];
+    const serverIds = serverMatches.map(m => m[1]);
+    console.log(`[extract] Movie ID: ${movieId}, Servers: ${serverIds.join(", ")}`);
+
+    if (serverIds.length === 0) {
+      return new Response(JSON.stringify({ error: "No servers found", embed_url: embedPageUrl }), {
+        status: 404,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // 4. Try each server to get a stream link
+    let videoUrl: string | null = null;
+    let videoType: "m3u8" | "mp4" = "m3u8";
+    let playerLink: string | null = null;
+
+    for (const serverId of serverIds) {
+      try {
+        const apiUrl = `https://embedplayapi.site/ajax/get_stream_link?id=${serverId}&movie=${movieId}&is_init=false&captcha=&ref=`;
+        console.log(`[extract] Trying server ${serverId}: ${apiUrl}`);
+
+        const apiRes = await fetch(apiUrl, {
+          headers: {
+            "User-Agent": UA,
+            "Referer": embedPageUrl,
+            "X-Requested-With": "XMLHttpRequest",
+            "Accept": "application/json, text/javascript, */*; q=0.01",
+          },
+        });
+
+        if (!apiRes.ok) {
+          console.log(`[extract] Server ${serverId} returned ${apiRes.status}`);
+          continue;
+        }
+
+        const contentType = apiRes.headers.get("content-type") || "";
+        if (!contentType.includes("json")) {
+          console.log(`[extract] Server ${serverId} returned non-JSON: ${contentType}`);
+          continue;
+        }
+
+        const apiData = await apiRes.json();
+        console.log(`[extract] Server ${serverId} response:`, JSON.stringify(apiData));
+
+        if (apiData.success && apiData.data?.link) {
+          playerLink = apiData.data.link;
+          console.log(`[extract] Got player link: ${playerLink}`);
+
+          // 5. Fetch the player link to extract the actual video URL
+          const playerRes = await fetch(playerLink, {
+            headers: {
+              "User-Agent": UA,
+              "Referer": "https://embedplayapi.site/",
+            },
+            redirect: "follow",
+          });
+
+          if (playerRes.ok) {
+            const playerHtml = await playerRes.text();
+
+            // Try regex patterns to find video URLs
+            const patterns = [
+              /file\s*:\s*["']([^"']+\.m3u8[^"']*)/gi,
+              /src\s*:\s*["']([^"']+\.m3u8[^"']*)/gi,
+              /source\s*:\s*["']([^"']+\.m3u8[^"']*)/gi,
+              /["'](https?:\/\/[^"'\s]+\.m3u8[^"'\s]*)/gi,
+              /["'](https?:\/\/[^"'\s]+\.mp4[^"'\s]*)/gi,
+              /file\s*:\s*["']([^"']+\.mp4[^"']*)/gi,
+            ];
 
             for (const pattern of patterns) {
               pattern.lastIndex = 0;
-              const m = pattern.exec(iframeHtml);
-              if (m?.[1]) {
-                videoUrl = m[1];
+              const match = pattern.exec(playerHtml);
+              if (match?.[1]) {
+                videoUrl = match[1];
                 videoType = videoUrl.includes(".mp4") ? "mp4" : "m3u8";
+                console.log(`[extract] Found video URL: ${videoUrl}`);
                 break;
               }
             }
-            if (videoUrl) break;
-          } catch (e) {
-            console.log(`[extract] Failed to follow iframe: ${e}`);
+
+            // Also check for iframes inside the player page
+            if (!videoUrl) {
+              const iframeSrcs = [...playerHtml.matchAll(/src=["'](https?:\/\/[^"']+)["']/gi)].map(m => m[1]);
+              for (const iframeUrl of iframeSrcs) {
+                if (iframeUrl.includes("embed") || iframeUrl.includes("player") || iframeUrl.includes("stream") || iframeUrl.includes("video")) {
+                  try {
+                    console.log(`[extract] Following inner iframe: ${iframeUrl}`);
+                    const iframeRes = await fetch(iframeUrl, {
+                      headers: { "User-Agent": UA, "Referer": playerLink || "https://embedplayapi.site/" },
+                      redirect: "follow",
+                    });
+                    const iframeHtml = await iframeRes.text();
+
+                    for (const pattern of patterns) {
+                      pattern.lastIndex = 0;
+                      const m = pattern.exec(iframeHtml);
+                      if (m?.[1]) {
+                        videoUrl = m[1];
+                        videoType = videoUrl.includes(".mp4") ? "mp4" : "m3u8";
+                        console.log(`[extract] Found video in iframe: ${videoUrl}`);
+                        break;
+                      }
+                    }
+                    if (videoUrl) break;
+                  } catch (e) {
+                    console.log(`[extract] Failed to follow iframe: ${e}`);
+                  }
+                }
+              }
+            }
           }
+
+          if (videoUrl) break;
         }
+      } catch (e) {
+        console.log(`[extract] Server ${serverId} error: ${e}`);
       }
     }
 
-    // 5. If found, save to cache and return
+    // 6. If found, save to cache and return
     if (videoUrl) {
-      console.log(`[extract] Found video: ${videoUrl}`);
+      console.log(`[extract] Success! Video: ${videoUrl}`);
 
       await supabase.from("video_cache").upsert({
         tmdb_id,
@@ -166,11 +247,12 @@ Deno.serve(async (req) => {
       });
     }
 
-    // 6. No direct URL found - return embed for client-side extraction
-    console.log(`[extract] No direct URL, returning embed for client extraction`);
+    // 7. No direct URL - return player link for proxy fallback
+    console.log(`[extract] No direct video URL found. Player link: ${playerLink}`);
     return new Response(JSON.stringify({
       url: null,
-      embed_url: embedPlayUrl,
+      player_link: playerLink,
+      embed_url: embedPageUrl,
       provider: "embedplay",
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
