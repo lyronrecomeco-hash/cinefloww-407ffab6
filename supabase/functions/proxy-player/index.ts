@@ -10,16 +10,22 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { url } = await req.json();
+    // Support both GET (query param) and POST (json body)
+    let targetUrl: string | null = null;
 
-    if (!url || !url.startsWith("https://superflixapi.one/")) {
-      return new Response(
-        JSON.stringify({ error: "Invalid URL" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+    if (req.method === "GET") {
+      const params = new URL(req.url).searchParams;
+      targetUrl = params.get("url");
+    } else {
+      const body = await req.json();
+      targetUrl = body.url;
     }
 
-    const response = await fetch(url, {
+    if (!targetUrl || !targetUrl.startsWith("https://superflixapi.one/")) {
+      return new Response("Invalid URL", { status: 400, headers: corsHeaders });
+    }
+
+    const response = await fetch(targetUrl, {
       headers: {
         "User-Agent":
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -30,10 +36,10 @@ Deno.serve(async (req) => {
     });
 
     if (!response.ok) {
-      return new Response(
-        JSON.stringify({ error: `Upstream error: ${response.status}` }),
-        { status: response.status, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return new Response(`Upstream error: ${response.status}`, {
+        status: response.status,
+        headers: corsHeaders,
+      });
     }
 
     let html = await response.text();
@@ -42,16 +48,18 @@ Deno.serve(async (req) => {
     html = html.replace(/(src|href)="\/(?!\/)/g, `$1="https://superflixapi.one/`);
     html = html.replace(/(src|href)='\/(?!\/)/g, `$1='https://superflixapi.one/`);
 
-    // Inject base tag for remaining relative resources
-    html = html.replace(
-      "<head>",
-      `<head><base href="https://superflixapi.one/">`
-    );
+    // Inject base tag
+    if (html.includes("<head>")) {
+      html = html.replace("<head>", `<head><base href="https://superflixapi.one/">`);
+    } else if (html.includes("<HEAD>")) {
+      html = html.replace("<HEAD>", `<HEAD><base href="https://superflixapi.one/">`);
+    }
 
     return new Response(html, {
       headers: {
         ...corsHeaders,
         "Content-Type": "text/html; charset=utf-8",
+        "X-Frame-Options": "ALLOWALL",
       },
     });
   } catch (error) {

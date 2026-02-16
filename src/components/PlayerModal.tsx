@@ -60,48 +60,22 @@ const PlayerModal = ({ tmdbId, imdbId, type, season, episode, title, onClose }: 
   const [currentProviderIdx, setCurrentProviderIdx] = useState(0);
   const [iframeError, setIframeError] = useState(false);
   const [iframeKey, setIframeKey] = useState(0);
-  const [proxyHtml, setProxyHtml] = useState<string | null>(null);
-  const [proxyLoading, setProxyLoading] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   const provider = PROVIDERS[currentProviderIdx];
   const rawUrl = provider.buildUrl(tmdbId, imdbId, type, season, episode);
 
-  // Fetch proxied HTML for SuperFlix
+  // For proxy providers, use edge function URL as iframe src directly
+  const iframeSrc = provider.useProxy
+    ? `${SUPABASE_URL}/functions/v1/proxy-player?url=${encodeURIComponent(rawUrl)}`
+    : rawUrl;
+
+  // Timeout fallback for all providers
   useEffect(() => {
-    if (!provider.useProxy) {
-      setProxyHtml(null);
-      return;
-    }
-
-    setProxyLoading(true);
-    setProxyHtml(null);
-
-    fetch(`${SUPABASE_URL}/functions/v1/proxy-player`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url: rawUrl }),
-    })
-      .then(async (res) => {
-        if (!res.ok) throw new Error(`Proxy ${res.status}`);
-        const html = await res.text();
-        setProxyHtml(html);
-        setProxyLoading(false);
-        setIframeError(false);
-      })
-      .catch(() => {
-        setProxyLoading(false);
-        setIframeError(true);
-      });
-  }, [rawUrl, provider.useProxy, iframeKey]);
-
-  // Timeout fallback for non-proxy providers
-  useEffect(() => {
-    if (provider.useProxy) return;
     setIframeError(false);
-    const timer = setTimeout(() => setIframeError(true), 8000);
+    const timer = setTimeout(() => setIframeError(true), 10000);
     return () => clearTimeout(timer);
-  }, [iframeKey, currentProviderIdx, provider.useProxy]);
+  }, [iframeKey, currentProviderIdx]);
 
   // ESC to close
   useEffect(() => {
@@ -124,10 +98,6 @@ const PlayerModal = ({ tmdbId, imdbId, type, season, episode, title, onClose }: 
   const openExternal = useCallback(() => {
     window.open(rawUrl, "_blank", "noopener,noreferrer");
   }, [rawUrl]);
-
-  // Build srcdoc for proxy or direct src
-  const iframeSrc = provider.useProxy ? undefined : rawUrl;
-  const iframeSrcDoc = provider.useProxy && proxyHtml ? proxyHtml : undefined;
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" onClick={onClose}>
@@ -194,19 +164,10 @@ const PlayerModal = ({ tmdbId, imdbId, type, season, episode, title, onClose }: 
           <div className="absolute top-0 right-0 w-10 h-10 z-20 pointer-events-auto bg-transparent" />
           <div className="absolute top-0 left-0 w-10 h-10 z-20 pointer-events-auto bg-transparent" />
 
-          {proxyLoading && provider.useProxy ? (
-            <div className="absolute inset-0 flex items-center justify-center bg-background z-10">
-              <div className="text-center">
-                <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-                <p className="text-sm text-muted-foreground">Carregando via proxy...</p>
-              </div>
-            </div>
-          ) : (
-            <iframe
+          <iframe
               key={iframeKey}
               ref={iframeRef}
               src={iframeSrc}
-              srcDoc={iframeSrcDoc}
               className="absolute inset-0 w-full h-full"
               allowFullScreen
               allow="autoplay; encrypted-media; picture-in-picture"
@@ -214,7 +175,6 @@ const PlayerModal = ({ tmdbId, imdbId, type, season, episode, title, onClose }: 
               scrolling="no"
               title={title}
             />
-          )}
 
           {/* Error/fallback overlay */}
           {iframeError && (
