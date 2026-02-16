@@ -195,6 +195,48 @@ export type Database = {
         }
         Relationships: []
       }
+      video_cache: {
+        Row: {
+          audio_type: string
+          content_type: string
+          created_at: string
+          episode: number | null
+          expires_at: string
+          id: string
+          provider: string
+          season: number | null
+          tmdb_id: number
+          video_type: string
+          video_url: string
+        }
+        Insert: {
+          audio_type?: string
+          content_type: string
+          created_at?: string
+          episode?: number | null
+          expires_at?: string
+          id?: string
+          provider?: string
+          season?: number | null
+          tmdb_id: number
+          video_type?: string
+          video_url: string
+        }
+        Update: {
+          audio_type?: string
+          content_type?: string
+          created_at?: string
+          episode?: number | null
+          expires_at?: string
+          id?: string
+          provider?: string
+          season?: number | null
+          tmdb_id?: number
+          video_type?: string
+          video_url?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
