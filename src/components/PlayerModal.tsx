@@ -16,24 +16,10 @@ interface PlayerModalProps {
 interface Provider {
   name: string;
   buildUrl: (tmdbId: number, imdbId: string | null | undefined, type: "movie" | "tv", season?: number, episode?: number) => string;
-  useProxy?: boolean;
+  externalOnly?: boolean; // Can only open in new tab, not iframe
 }
 
 const PROVIDERS: Provider[] = [
-  {
-    name: "SuperFlix",
-    useProxy: true,
-    buildUrl: (tmdbId, imdbId, type, season, episode) => {
-      const apiType = type === "movie" ? "filme" : "serie";
-      const id = type === "movie" ? (imdbId || String(tmdbId)) : String(tmdbId);
-      const s = type === "movie" ? "" : String(season ?? "");
-      const e = type === "movie" ? "" : String(episode ?? "");
-      let url = `https://superflixapi.one/${apiType}/${id}/${s}/${e}`;
-      url = url.replace(/([^:])(\/\/{1,})/g, "$1/");
-      url = url.replace(/\/$/, "");
-      return url;
-    },
-  },
   {
     name: "Embed.su",
     buildUrl: (tmdbId, _imdbId, type, season, episode) => {
@@ -52,9 +38,21 @@ const PROVIDERS: Provider[] = [
       return `https://vidsrc.net/embed/tv/${tmdbId}/${season ?? 1}/${episode ?? 1}`;
     },
   },
+  {
+    name: "SuperFlix",
+    externalOnly: true,
+    buildUrl: (tmdbId, imdbId, type, season, episode) => {
+      const apiType = type === "movie" ? "filme" : "serie";
+      const id = type === "movie" ? (imdbId || String(tmdbId)) : String(tmdbId);
+      const s = type === "movie" ? "" : String(season ?? "");
+      const e = type === "movie" ? "" : String(episode ?? "");
+      let url = `https://superflixapi.one/${apiType}/${id}/${s}/${e}`;
+      url = url.replace(/([^:])(\/\/{1,})/g, "$1/");
+      url = url.replace(/\/$/, "");
+      return url;
+    },
+  },
 ];
-
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 
 const PlayerModal = ({ tmdbId, imdbId, type, season, episode, title, onClose }: PlayerModalProps) => {
   const [currentProviderIdx, setCurrentProviderIdx] = useState(0);
@@ -65,10 +63,8 @@ const PlayerModal = ({ tmdbId, imdbId, type, season, episode, title, onClose }: 
   const provider = PROVIDERS[currentProviderIdx];
   const rawUrl = provider.buildUrl(tmdbId, imdbId, type, season, episode);
 
-  // For proxy providers, use edge function URL as iframe src directly
-  const iframeSrc = provider.useProxy
-    ? `${SUPABASE_URL}/functions/v1/proxy-player?url=${encodeURIComponent(rawUrl)}`
-    : rawUrl;
+  // For external-only providers, show open button instead of iframe
+  const iframeSrc = provider.externalOnly ? null : rawUrl;
 
   // Timeout fallback for all providers
   useEffect(() => {
@@ -164,7 +160,8 @@ const PlayerModal = ({ tmdbId, imdbId, type, season, episode, title, onClose }: 
           <div className="absolute top-0 right-0 w-10 h-10 z-20 pointer-events-auto bg-transparent" />
           <div className="absolute top-0 left-0 w-10 h-10 z-20 pointer-events-auto bg-transparent" />
 
-          <iframe
+          {iframeSrc ? (
+            <iframe
               key={iframeKey}
               ref={iframeRef}
               src={iframeSrc}
@@ -175,6 +172,26 @@ const PlayerModal = ({ tmdbId, imdbId, type, season, episode, title, onClose }: 
               scrolling="no"
               title={title}
             />
+          ) : (
+            <div className="absolute inset-0 flex items-center justify-center bg-background">
+              <div className="text-center p-6 max-w-md">
+                <div className="w-16 h-16 rounded-2xl bg-primary/20 flex items-center justify-center mx-auto mb-4">
+                  <ExternalLink className="w-8 h-8 text-primary" />
+                </div>
+                <h3 className="font-display text-lg font-bold mb-2">{provider.name}</h3>
+                <p className="text-sm text-muted-foreground mb-5">
+                  Este provedor só funciona em nova aba (proteção anti-iframe).
+                </p>
+                <button
+                  onClick={openExternal}
+                  className="flex items-center gap-2 px-6 py-3 rounded-2xl bg-primary text-primary-foreground font-semibold text-sm hover:bg-primary/90 transition-all mx-auto"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                  Abrir {provider.name}
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Error/fallback overlay */}
           {iframeError && (
