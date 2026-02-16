@@ -178,12 +178,17 @@ Deno.serve(async (req) => {
     const origin = new URL(targetUrl).origin;
     console.log(`[proxy] Fetching: ${targetUrl}`);
 
+    // Use our own domain as referer, not the API's domain
     const response = await fetch(targetUrl, {
       headers: {
         "User-Agent": UA,
-        "Referer": origin + "/",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9,pt-BR;q=0.8",
+        "Referer": "https://superflix.app/",
+        "Origin": "https://superflix.app",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+        "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Sec-Fetch-Dest": "iframe",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "cross-site",
       },
       redirect: "follow",
     });
@@ -207,13 +212,52 @@ Deno.serve(async (req) => {
     let html = await response.text();
 
     // Remove ad scripts
-    html = html.replace(/<script[^>]*(?:ads|advert|pop|banner|track|analytics|doubleclick|adnxs|taboola)[^>]*>[\s\S]*?<\/script>/gi, "");
+    html = html.replace(/<script[^>]*(?:ads|advert|pop|banner|track|analytics|doubleclick|adnxs|taboola|chorumebbbbgoza)[^>]*>[\s\S]*?<\/script>/gi, "");
+
+    // Remove the obfuscated anti-sandbox/ad script (__Y object)
+    html = html.replace(/<script>\s*var\s+_0x[a-f0-9]+[\s\S]*?__Y\[.*?\]\(\);\s*<\/script>/gi, "");
 
     // Remove onclick popups
     html = html.replace(/onclick\s*=\s*["'][^"']*window\.open[^"']*["']/gi, "");
 
     // Remove hidden iframes
     html = html.replace(/<iframe[^>]*(?:visibility:\s*hidden|width:\s*[01]|height:\s*[01]|display:\s*none)[^>]*>[\s\S]*?<\/iframe>/gi, "");
+
+    // Check if this is a gate page (has "Acesso Restrito" or gate-card)
+    const isGatePage = html.includes("gate-card") || html.includes("Acesso Restrito");
+
+    if (isGatePage) {
+      console.log("[proxy] Detected gate page, extracting embed URL and auto-redirecting");
+      
+      // Extract the actual embed URL from the gate page
+      const embedMatch = html.match(/src="(https?:\/\/superflixapi\.[^"]+)"/i);
+      if (embedMatch?.[1]) {
+        const embedUrl = embedMatch[1];
+        console.log(`[proxy] Found embed URL in gate: ${embedUrl}`);
+        
+        // Build a minimal page that loads the embed directly as a full-screen iframe
+        const playerHtml = `<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>*{margin:0;padding:0}html,body{width:100%;height:100%;overflow:hidden;background:#000}iframe{width:100%;height:100%;border:0}</style>
+${ANTI_AD_CSS}
+${INTERCEPTOR_SCRIPT}
+<script>window.open=function(){return null};</script>
+</head><body>
+<iframe src="${embedUrl}" allowfullscreen allow="autoplay; encrypted-media; picture-in-picture; fullscreen" style="width:100%;height:100%;border:0"></iframe>
+</body></html>`;
+
+        return new Response(playerHtml, {
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "text/html; charset=utf-8",
+            "X-Frame-Options": "ALLOWALL",
+            "Content-Security-Policy": "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; frame-src *; media-src * blob:; connect-src *; worker-src * blob:;",
+          },
+        });
+      }
+    }
 
     // Fix relative URLs
     html = html.replace(/(src|href)="\/(?!\/)/g, `$1="${origin}/`);
@@ -235,7 +279,7 @@ Deno.serve(async (req) => {
         ...corsHeaders,
         "Content-Type": "text/html; charset=utf-8",
         "X-Frame-Options": "ALLOWALL",
-        "Content-Security-Policy": "frame-ancestors *",
+        "Content-Security-Policy": "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; frame-src *; media-src * blob:; connect-src *; worker-src * blob:;",
       },
     });
   } catch (error) {
