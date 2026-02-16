@@ -139,7 +139,7 @@ const ANTI_AD_CSS = `
 `;
 
 const ALLOWED_DOMAINS = [
-  "superflixapi.one", "superflix.one",
+  "superflixapi.cv", "superflixapi.one", "superflix.one",
   "embed.su", "autoembed.co", "videasy.net",
   "vidsrc.cc", "vidsrc.net", "vidsrc.xyz", "vidsrc.icu",
 ];
