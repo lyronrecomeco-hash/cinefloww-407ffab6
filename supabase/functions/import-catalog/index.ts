@@ -1,0 +1,189 @@
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+};
+
+const TMDB_TOKEN = "eyJhbGciOiJIUzI1NiJ9.eyJhdWQiOiI1MDFiOWNkYjllNDQ0NjkxMDJiODk5YjQ0YjU2MWQ5ZCIsIm5iZiI6MTc3MTIzMDg1My43NjYsInN1YiI6IjY5OTJkNjg1NzZjODAxNTdmMjFhZjMxMSIsInNjb3BlcyI6WyJhcGlfcmVhZCJdLCJ2ZXJzaW9uIjoxfQ.c47JvphccOz_oyaUuQWCHQ1mXAsSH01OB14vKE2uenw";
+const TMDB_BASE = "https://api.themoviedb.org/3";
+const tmdbHeaders = { Authorization: `Bearer ${TMDB_TOKEN}`, "Content-Type": "application/json" };
+
+async function fetchTMDB(endpoint: string, params: Record<string, string> = {}) {
+  const url = new URL(`${TMDB_BASE}${endpoint}`);
+  url.searchParams.set("language", "pt-BR");
+  Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
+  const res = await fetch(url.toString(), { headers: tmdbHeaders });
+  if (!res.ok) throw new Error(`TMDB ${res.status}`);
+  return res.json();
+}
+
+async function fetchAllPages(endpoint: string, maxPages = 5) {
+  const results: any[] = [];
+  for (let page = 1; page <= maxPages; page++) {
+    const data = await fetchTMDB(endpoint, { page: String(page) });
+    results.push(...data.results);
+    if (page >= data.total_pages) break;
+  }
+  return results;
+}
+
+async function getDetails(id: number, type: "movie" | "tv") {
+  return fetchTMDB(`/${type}/${id}`, { append_to_response: "external_ids" });
+}
+
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+
+  try {
+    const authHeader = req.headers.get("Authorization");
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    
+    // Verify admin role
+    const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+    const userClient = createClient(supabaseUrl, anonKey, {
+      global: { headers: { Authorization: authHeader || "" } },
+    });
+    const { data: { user } } = await userClient.auth.getUser();
+    if (!user) throw new Error("Unauthorized");
+
+    const adminClient = createClient(supabaseUrl, serviceKey);
+    const { data: roles } = await adminClient.from("user_roles").select("role").eq("user_id", user.id).eq("role", "admin");
+    if (!roles?.length) throw new Error("Not admin");
+
+    const body = await req.json();
+    const contentType = body.content_type || "movie"; // movie, series, dorama, anime
+    const maxPages = body.max_pages || 5;
+
+    // Determine TMDB endpoints
+    let endpoints: string[] = [];
+    const tmdbType = contentType === "movie" ? "movie" : "tv";
+    
+    if (contentType === "movie") {
+      endpoints = ["/movie/popular", "/movie/top_rated", "/movie/now_playing", "/trending/movie/week"];
+    } else if (contentType === "series") {
+      endpoints = ["/tv/popular", "/tv/top_rated", "/tv/airing_today", "/trending/tv/week"];
+    } else if (contentType === "dorama") {
+      // Korean/Japanese dramas
+      endpoints = ["/discover/tv"];
+    } else if (contentType === "anime") {
+      // Anime (Japanese animation genre 16)
+      endpoints = ["/discover/tv"];
+    }
+
+    let allItems: any[] = [];
+    const seenIds = new Set<number>();
+
+    for (const endpoint of endpoints) {
+      let params: Record<string, string> = {};
+      if (contentType === "dorama") {
+        params = { with_origin_country: "KR|JP", sort_by: "popularity.desc" };
+      } else if (contentType === "anime") {
+        params = { with_genres: "16", with_origin_country: "JP", sort_by: "popularity.desc" };
+      }
+
+      const items = await fetchAllPages(endpoint + (Object.keys(params).length ? "" : ""), 
+        contentType === "dorama" || contentType === "anime" ? maxPages : Math.min(maxPages, 3));
+      
+      // For discover endpoint, add params
+      if (endpoint === "/discover/tv") {
+        const url = new URL(`${TMDB_BASE}${endpoint}`);
+        url.searchParams.set("language", "pt-BR");
+        Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
+        
+        const discoverResults: any[] = [];
+        for (let page = 1; page <= maxPages; page++) {
+          url.searchParams.set("page", String(page));
+          const res = await fetch(url.toString(), { headers: tmdbHeaders });
+          const data = await res.json();
+          discoverResults.push(...data.results);
+          if (page >= data.total_pages) break;
+        }
+        
+        for (const item of discoverResults) {
+          if (!seenIds.has(item.id)) {
+            seenIds.add(item.id);
+            allItems.push(item);
+          }
+        }
+        continue;
+      }
+
+      for (const item of items) {
+        if (!seenIds.has(item.id)) {
+          seenIds.add(item.id);
+          allItems.push(item);
+        }
+      }
+    }
+
+    console.log(`Found ${allItems.length} unique items for ${contentType}`);
+
+    let imported = 0;
+    let skipped = 0;
+    const errors: string[] = [];
+
+    for (const item of allItems) {
+      try {
+        // Fetch full details for imdb_id
+        let detail: any;
+        try {
+          detail = await getDetails(item.id, tmdbType as "movie" | "tv");
+        } catch {
+          detail = item;
+        }
+
+        const imdbId = detail.imdb_id || detail.external_ids?.imdb_id || null;
+
+        const row = {
+          tmdb_id: item.id,
+          imdb_id: imdbId,
+          content_type: contentType,
+          title: item.title || item.name || "Sem título",
+          original_title: item.original_title || item.original_name || null,
+          overview: item.overview || "",
+          poster_path: item.poster_path,
+          backdrop_path: item.backdrop_path,
+          release_date: item.release_date || item.first_air_date || null,
+          vote_average: item.vote_average || 0,
+          runtime: detail.runtime || null,
+          number_of_seasons: detail.number_of_seasons || null,
+          number_of_episodes: detail.number_of_episodes || null,
+          status: "published",
+          featured: false,
+          audio_type: ["legendado"],
+          created_by: user.id,
+        };
+
+        const { error } = await adminClient.from("content").upsert(row, {
+          onConflict: "tmdb_id,content_type",
+          ignoreDuplicates: false,
+        });
+
+        if (error) {
+          if (error.code === "23505") skipped++;
+          else errors.push(`${item.id}: ${error.message}`);
+        } else {
+          imported++;
+        }
+
+        // Rate limit: small delay
+        if (imported % 10 === 0) await new Promise(r => setTimeout(r, 250));
+      } catch (e) {
+        errors.push(`${item.id}: ${e.message}`);
+      }
+    }
+
+    return new Response(
+      JSON.stringify({ success: true, imported, skipped, total: allItems.length, errors: errors.slice(0, 10) }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  } catch (error) {
+    console.error("Import error:", error);
+    return new Response(
+      JSON.stringify({ success: false, error: error.message }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  }
+});

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
+import { supabase } from "@/integrations/supabase/client";
 import { ArrowLeft, Play, Star, Clock, Calendar, Users, Clapperboard, Tv, List, Image as ImageIcon } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import ContentRow from "@/components/ContentRow";
@@ -27,6 +28,7 @@ const DetailsPage = ({ type }: DetailsPageProps) => {
   const [showSeasons, setShowSeasons] = useState(false);
   const [showCast, setShowCast] = useState(false);
   const [showPlayer, setShowPlayer] = useState(false);
+  const [audioTypes, setAudioTypes] = useState<string[]>([]);
 
   useEffect(() => {
     setLoading(true);
@@ -38,6 +40,10 @@ const DetailsPage = ({ type }: DetailsPageProps) => {
     fetcher(Number(id)).then((data) => {
       setDetail(data);
       setLoading(false);
+      // Fetch audio types from DB
+      const cType = type === "movie" ? "movie" : "series";
+      supabase.from("content").select("audio_type").eq("tmdb_id", Number(id)).eq("content_type", cType).maybeSingle()
+        .then(({ data: content }) => { if (content?.audio_type) setAudioTypes(content.audio_type); });
     }).catch(() => setLoading(false));
   }, [id, type]);
 
@@ -307,6 +313,7 @@ const DetailsPage = ({ type }: DetailsPageProps) => {
           imdbId={imdbId}
           type={type}
           title={getDisplayTitle(detail)}
+          audioTypes={audioTypes}
           onClose={() => setShowPlayer(false)}
         />
       )}

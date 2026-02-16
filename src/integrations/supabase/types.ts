@@ -43,6 +43,7 @@ export type Database = {
       }
       content: {
         Row: {
+          audio_type: string[] | null
           backdrop_path: string | null
           category_id: string | null
           content_type: string
@@ -65,6 +66,7 @@ export type Database = {
           vote_average: number | null
         }
         Insert: {
+          audio_type?: string[] | null
           backdrop_path?: string | null
           category_id?: string | null
           content_type: string
@@ -87,6 +89,7 @@ export type Database = {
           vote_average?: number | null
         }
         Update: {
+          audio_type?: string[] | null
           backdrop_path?: string | null
           category_id?: string | null
           content_type?: string
