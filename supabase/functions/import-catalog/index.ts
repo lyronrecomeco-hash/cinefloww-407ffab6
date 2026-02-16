@@ -124,54 +124,39 @@ Deno.serve(async (req) => {
     let skipped = 0;
     const errors: string[] = [];
 
-    for (const item of allItems) {
-      try {
-        // Fetch full details for imdb_id
-        let detail: any;
-        try {
-          detail = await getDetails(item.id, tmdbType as "movie" | "tv");
-        } catch {
-          detail = item;
-        }
+    // Batch insert without fetching individual details (avoids timeout)
+    const BATCH_SIZE = 50;
+    for (let i = 0; i < allItems.length; i += BATCH_SIZE) {
+      const batch = allItems.slice(i, i + BATCH_SIZE);
+      const rows = batch.map(item => ({
+        tmdb_id: item.id,
+        imdb_id: null,
+        content_type: contentType,
+        title: item.title || item.name || "Sem título",
+        original_title: item.original_title || item.original_name || null,
+        overview: item.overview || "",
+        poster_path: item.poster_path,
+        backdrop_path: item.backdrop_path,
+        release_date: item.release_date || item.first_air_date || null,
+        vote_average: item.vote_average || 0,
+        runtime: null,
+        number_of_seasons: null,
+        number_of_episodes: null,
+        status: "published",
+        featured: false,
+        audio_type: ["legendado"],
+        created_by: user.id,
+      }));
 
-        const imdbId = detail.imdb_id || detail.external_ids?.imdb_id || null;
+      const { error, count } = await adminClient.from("content").upsert(rows, {
+        onConflict: "tmdb_id,content_type",
+        ignoreDuplicates: true,
+      });
 
-        const row = {
-          tmdb_id: item.id,
-          imdb_id: imdbId,
-          content_type: contentType,
-          title: item.title || item.name || "Sem título",
-          original_title: item.original_title || item.original_name || null,
-          overview: item.overview || "",
-          poster_path: item.poster_path,
-          backdrop_path: item.backdrop_path,
-          release_date: item.release_date || item.first_air_date || null,
-          vote_average: item.vote_average || 0,
-          runtime: detail.runtime || null,
-          number_of_seasons: detail.number_of_seasons || null,
-          number_of_episodes: detail.number_of_episodes || null,
-          status: "published",
-          featured: false,
-          audio_type: ["legendado"],
-          created_by: user.id,
-        };
-
-        const { error } = await adminClient.from("content").upsert(row, {
-          onConflict: "tmdb_id,content_type",
-          ignoreDuplicates: false,
-        });
-
-        if (error) {
-          if (error.code === "23505") skipped++;
-          else errors.push(`${item.id}: ${error.message}`);
-        } else {
-          imported++;
-        }
-
-        // Rate limit: small delay
-        if (imported % 10 === 0) await new Promise(r => setTimeout(r, 250));
-      } catch (e) {
-        errors.push(`${item.id}: ${e.message}`);
+      if (error) {
+        errors.push(`Batch ${i}: ${error.message}`);
+      } else {
+        imported += batch.length;
       }
     }
 
