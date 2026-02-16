@@ -183,14 +183,23 @@ Deno.serve(async (req) => {
     }
 
     const origin = new URL(targetUrl).origin;
+    const hostname = new URL(targetUrl).hostname;
     console.log(`[proxy] Fetching: ${targetUrl}`);
 
-    // Use our own domain as referer, not the API's domain
+    // Dynamic referer based on target domain
+    const refererMap: Record<string, string> = {
+      "vidsrc-embed.ru": "https://vidsrc-embed.ru/",
+      "cloudnestra.com": "https://vidsrc-embed.ru/",
+      "embedplay.click": "https://embedplayapi.site/",
+      "embedplayapi.site": "https://embedplayapi.site/",
+    };
+    const referer = refererMap[hostname] || origin + "/";
+
     const response = await fetch(targetUrl, {
       headers: {
         "User-Agent": UA,
-        "Referer": "https://embedplayapi.site/",
-        "Origin": "https://embedplayapi.site",
+        "Referer": referer,
+        "Origin": new URL(referer).origin,
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
         "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
         "Sec-Fetch-Dest": "iframe",

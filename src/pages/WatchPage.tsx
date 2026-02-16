@@ -76,7 +76,11 @@ const WatchPage = () => {
   const isMovie = type === "movie";
   const embedUrls = buildEmbedUrls(imdbId, id || "", type || "movie", season, episode);
   const currentEmbedUrl = playerLink || embedUrls[currentProviderIdx] || embedUrls[0];
-  const proxyUrl = `${SUPABASE_URL}/functions/v1/proxy-player?url=${encodeURIComponent(currentEmbedUrl)}`;
+  // Only proxy embedplayapi.site - other providers load directly in iframe
+  const needsProxy = currentEmbedUrl.includes("embedplayapi.site");
+  const iframeSrc = needsProxy 
+    ? `${SUPABASE_URL}/functions/v1/proxy-player?url=${encodeURIComponent(currentEmbedUrl)}`
+    : currentEmbedUrl;
 
   // Load audio types from DB
   useEffect(() => {
@@ -322,7 +326,7 @@ const WatchPage = () => {
         <div className="absolute top-0 right-0 w-[3px] h-full z-10 bg-black" />
 
         <iframe
-          src={proxyUrl}
+          src={iframeSrc}
           className="w-full h-full"
           allowFullScreen
           allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
