@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Search, Trash2, Star, Loader2, Film, Eye, EyeOff, Download, Pencil, ChevronLeft, ChevronRight } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import ContentEditModal from "./ContentEditModal";
+import ImportModal from "@/components/admin/ImportModal";
 
 interface ContentManagerProps {
   contentType: "movie" | "series" | "dorama" | "anime";
@@ -21,8 +22,11 @@ const ContentManager = ({ contentType, title }: ContentManagerProps) => {
   const [items, setItems] = useState<any[]>([]);
   const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [showImportModal, setShowImportModal] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importProgress, setImportProgress] = useState("");
+  const [cineveoTotalPages, setCineveoTotalPages] = useState(0);
+  const [loadingPages, setLoadingPages] = useState(false);
   const [editItem, setEditItem] = useState<any | null>(null);
   const [page, setPage] = useState(0);
   const [filterText, setFilterText] = useState("");
@@ -55,17 +59,44 @@ const ContentManager = ({ contentType, title }: ContentManagerProps) => {
 
   useEffect(() => { fetchContent(); }, [fetchContent]);
 
-  const handleCineveoImport = async () => {
+  const openImportModal = async () => {
+    setShowImportModal(true);
+    setImportProgress("");
+    setLoadingPages(true);
+
+    // Fetch total pages from CineVeo
+    try {
+      const cineveoType = contentType === "movie" ? "movie" : "tv";
+      const res = await fetch(`https://cineveo.site/category.php?type=${cineveoType}`, {
+        headers: { Accept: "text/html,*/*" },
+      });
+      if (res.ok) {
+        const html = await res.text();
+        const pageMatches = [...html.matchAll(/class="pagination-btn[^"]*">(\d+)<\/button>/g)];
+        let maxPage = 1;
+        for (const m of pageMatches) {
+          const p = parseInt(m[1]);
+          if (p > maxPage) maxPage = p;
+        }
+        setCineveoTotalPages(maxPage);
+      }
+    } catch {
+      setCineveoTotalPages(0);
+    }
+    setLoadingPages(false);
+  };
+
+  const handleImport = async (startPage: number, maxPages: number, enrich: boolean) => {
     setImporting(true);
-    setImportProgress("Importando catálogo do CineVeo...");
+    setImportProgress("Conectando ao CineVeo...");
     try {
       const { data, error } = await supabase.functions.invoke("import-catalog", {
-        body: { content_type: contentType, max_pages: 20, start_page: 1, enrich: true },
+        body: { content_type: contentType, max_pages: maxPages, start_page: startPage, enrich },
       });
 
       if (error) throw error;
 
-      setImportProgress(`✅ ${data.imported} importados (${data.total} encontrados no CineVeo, ${data.pages_scraped}/${data.total_pages} páginas)`);
+      setImportProgress(`✅ ${data.imported} importados (${data.total} encontrados, ${data.pages_scraped}/${data.total_pages} páginas)`);
       toast({ title: "Importação concluída!", description: `${data.imported} itens do CineVeo adicionados.` });
       fetchContent();
     } catch (err: any) {
@@ -101,20 +132,14 @@ const ContentManager = ({ contentType, title }: ContentManagerProps) => {
         </div>
         <div className="flex items-center gap-2 self-start">
           <button
-            onClick={handleCineveoImport}
-            disabled={importing}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-50"
+            onClick={openImportModal}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors"
           >
-            {importing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-            {importing ? "Importando..." : "Importar CineVeo"}
+            <Download className="w-4 h-4" />
+            Importar CineVeo
           </button>
         </div>
       </div>
-
-      {/* Import progress */}
-      {importProgress && (
-        <div className="glass p-4 text-sm">{importProgress}</div>
-      )}
 
       {/* Filter */}
       <div className="relative">
@@ -135,7 +160,7 @@ const ContentManager = ({ contentType, title }: ContentManagerProps) => {
         <div className="glass p-12 text-center">
           <Film className="w-12 h-12 text-muted-foreground/30 mx-auto mb-3" />
           <p className="text-muted-foreground text-sm">Nenhum conteúdo encontrado</p>
-          <button onClick={handleCineveoImport} disabled={importing} className="mt-4 px-4 py-2 rounded-xl bg-primary/20 text-primary text-sm font-medium hover:bg-primary/30 transition-colors">
+          <button onClick={openImportModal} className="mt-4 px-4 py-2 rounded-xl bg-primary/20 text-primary text-sm font-medium hover:bg-primary/30 transition-colors">
             Importar do CineVeo
           </button>
         </div>
@@ -245,6 +270,28 @@ const ContentManager = ({ contentType, title }: ContentManagerProps) => {
           onClose={() => setEditItem(null)}
           onSave={() => { setEditItem(null); fetchContent(); }}
         />
+      )}
+
+      {/* Import Modal */}
+      {showImportModal && (
+        loadingPages ? (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+            <div className="flex flex-col items-center gap-3">
+              <Loader2 className="w-8 h-8 animate-spin text-primary" />
+              <p className="text-sm text-muted-foreground">Consultando CineVeo...</p>
+            </div>
+          </div>
+        ) : (
+          <ImportModal
+            contentType={contentType}
+            title={title}
+            totalPages={cineveoTotalPages}
+            onClose={() => { setShowImportModal(false); setImportProgress(""); }}
+            onImport={handleImport}
+            importing={importing}
+            progress={importProgress}
+          />
+        )
       )}
     </div>
   );
