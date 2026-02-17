@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { searchMulti, getMovieDetails, getSeriesDetails, posterUrl, TMDBMovie, TMDBMovieDetail } from "@/services/tmdb";
-import { Search, Plus, Trash2, Star, Loader2, Film, X, Eye, EyeOff, Download, Pencil, ChevronLeft, ChevronRight } from "lucide-react";
+import { Search, Trash2, Star, Loader2, Film, Eye, EyeOff, Download, Pencil, ChevronLeft, ChevronRight } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import ContentEditModal from "./ContentEditModal";
 
@@ -22,11 +21,6 @@ const ContentManager = ({ contentType, title }: ContentManagerProps) => {
   const [items, setItems] = useState<any[]>([]);
   const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<TMDBMovie[]>([]);
-  const [searching, setSearching] = useState(false);
-  const [adding, setAdding] = useState<number | null>(null);
-  const [showSearch, setShowSearch] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importProgress, setImportProgress] = useState("");
   const [editItem, setEditItem] = useState<any | null>(null);
@@ -61,78 +55,18 @@ const ContentManager = ({ contentType, title }: ContentManagerProps) => {
 
   useEffect(() => { fetchContent(); }, [fetchContent]);
 
-  // Search TMDB
-  useEffect(() => {
-    if (searchQuery.length < 2) { setSearchResults([]); return; }
-    setSearching(true);
-    const timer = setTimeout(async () => {
-      try {
-        const data = await searchMulti(searchQuery);
-        const filtered = data.results
-          .filter(r => contentType === "movie" ? r.title !== undefined : r.name !== undefined)
-          .slice(0, 10);
-        setSearchResults(filtered);
-      } catch { /* ignore */ }
-      setSearching(false);
-    }, 400);
-    return () => clearTimeout(timer);
-  }, [searchQuery, contentType]);
-
-  const handleAdd = async (tmdbItem: TMDBMovie) => {
-    setAdding(tmdbItem.id);
-    try {
-      let detail: TMDBMovieDetail;
-      if (contentType === "movie") detail = await getMovieDetails(tmdbItem.id);
-      else detail = await getSeriesDetails(tmdbItem.id);
-
-      const { data: { session } } = await supabase.auth.getSession();
-
-      const { error } = await supabase.from("content").insert({
-        tmdb_id: detail.id,
-        imdb_id: detail.imdb_id || detail.external_ids?.imdb_id || null,
-        content_type: contentType,
-        title: detail.title || detail.name || "Sem título",
-        original_title: detail.title || detail.name,
-        overview: detail.overview || "",
-        poster_path: detail.poster_path,
-        backdrop_path: detail.backdrop_path,
-        release_date: detail.release_date || detail.first_air_date || null,
-        vote_average: detail.vote_average || 0,
-        runtime: detail.runtime || null,
-        number_of_seasons: detail.number_of_seasons || null,
-        number_of_episodes: detail.number_of_episodes || null,
-        status: "published",
-        featured: false,
-        audio_type: ["legendado"],
-        created_by: session?.user.id,
-      });
-
-      if (error) {
-        if (error.code === "23505") toast({ title: "Já existe", description: "Este conteúdo já foi adicionado.", variant: "destructive" });
-        else throw error;
-      } else {
-        toast({ title: "Adicionado!", description: `${detail.title || detail.name} foi adicionado ao catálogo.` });
-        fetchContent();
-        setSearchQuery(""); setSearchResults([]);
-      }
-    } catch (err: any) {
-      toast({ title: "Erro", description: err.message, variant: "destructive" });
-    }
-    setAdding(null);
-  };
-
-  const handleBulkImport = async () => {
+  const handleCineveoImport = async () => {
     setImporting(true);
-    setImportProgress("Importando catálogo do TMDB...");
+    setImportProgress("Importando catálogo do CineVeo...");
     try {
       const { data, error } = await supabase.functions.invoke("import-catalog", {
-        body: { content_type: contentType, max_pages: 20 },
+        body: { content_type: contentType, max_pages: 20, start_page: 1, enrich: true },
       });
 
       if (error) throw error;
 
-      setImportProgress(`✅ ${data.imported} importados, ${data.skipped} já existentes (${data.total} processados)`);
-      toast({ title: "Importação concluída!", description: `${data.imported} novos itens adicionados.` });
+      setImportProgress(`✅ ${data.imported} importados (${data.total} encontrados no CineVeo, ${data.pages_scraped}/${data.total_pages} páginas)`);
+      toast({ title: "Importação concluída!", description: `${data.imported} itens do CineVeo adicionados.` });
       fetchContent();
     } catch (err: any) {
       setImportProgress(`❌ Erro: ${err.message}`);
@@ -167,19 +101,12 @@ const ContentManager = ({ contentType, title }: ContentManagerProps) => {
         </div>
         <div className="flex items-center gap-2 self-start">
           <button
-            onClick={handleBulkImport}
+            onClick={handleCineveoImport}
             disabled={importing}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-sm font-medium hover:bg-white/10 transition-colors disabled:opacity-50"
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-50"
           >
             {importing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-            {importing ? "Importando..." : "Importar TMDB"}
-          </button>
-          <button
-            onClick={() => setShowSearch(!showSearch)}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors"
-          >
-            {showSearch ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
-            {showSearch ? "Fechar" : "Adicionar"}
+            {importing ? "Importando..." : "Importar CineVeo"}
           </button>
         </div>
       </div>
@@ -187,37 +114,6 @@ const ContentManager = ({ contentType, title }: ContentManagerProps) => {
       {/* Import progress */}
       {importProgress && (
         <div className="glass p-4 text-sm">{importProgress}</div>
-      )}
-
-      {/* TMDB Search */}
-      {showSearch && (
-        <div className="glass p-5 space-y-4">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <input
-              type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder={`Buscar ${title.toLowerCase()} no TMDB...`} autoFocus
-              className="w-full h-11 pl-10 pr-4 rounded-xl bg-white/5 border border-white/10 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50"
-            />
-            {searching && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-primary" />}
-          </div>
-          {searchResults.length > 0 && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[400px] overflow-y-auto scrollbar-hide">
-              {searchResults.map((result) => (
-                <div key={result.id} className="flex items-center gap-3 p-3 rounded-xl bg-white/[0.03] border border-white/5 hover:border-white/10 transition-colors">
-                  <img src={posterUrl(result.poster_path, "w92")} alt={result.title || result.name} className="w-10 h-14 rounded-lg object-cover flex-shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{result.title || result.name}</p>
-                    <span className="text-[10px] text-muted-foreground">{result.release_date?.split("-")[0] || result.first_air_date?.split("-")[0] || "N/A"}</span>
-                  </div>
-                  <button onClick={() => handleAdd(result)} disabled={adding === result.id} className="w-8 h-8 rounded-lg bg-primary/20 text-primary flex items-center justify-center hover:bg-primary/30 disabled:opacity-50 flex-shrink-0">
-                    {adding === result.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
       )}
 
       {/* Filter */}
@@ -239,8 +135,8 @@ const ContentManager = ({ contentType, title }: ContentManagerProps) => {
         <div className="glass p-12 text-center">
           <Film className="w-12 h-12 text-muted-foreground/30 mx-auto mb-3" />
           <p className="text-muted-foreground text-sm">Nenhum conteúdo encontrado</p>
-          <button onClick={handleBulkImport} disabled={importing} className="mt-4 px-4 py-2 rounded-xl bg-primary/20 text-primary text-sm font-medium hover:bg-primary/30 transition-colors">
-            Importar do TMDB
+          <button onClick={handleCineveoImport} disabled={importing} className="mt-4 px-4 py-2 rounded-xl bg-primary/20 text-primary text-sm font-medium hover:bg-primary/30 transition-colors">
+            Importar do CineVeo
           </button>
         </div>
       ) : (
