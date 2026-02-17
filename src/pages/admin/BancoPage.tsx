@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { Database, Film, Tv, Loader2, Play, RefreshCw, CheckCircle, XCircle, Search, ExternalLink } from "lucide-react";
+import { Database, Film, Tv, Loader2, Play, RefreshCw, CheckCircle, XCircle, Search, ExternalLink, Link2, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import PlayerModal from "@/components/PlayerModal";
 
 interface ContentItem {
   id: string;
@@ -37,6 +38,7 @@ const BancoPage = () => {
   const cancelRef = useRef(false);
   const { toast } = useToast();
   const [stats, setStats] = useState({ total: 0, withVideo: 0, withoutVideo: 0 });
+  const [playerItem, setPlayerItem] = useState<ContentItem | null>(null);
 
   const fetchContent = useCallback(async () => {
     setLoading(true);
@@ -124,12 +126,11 @@ const BancoPage = () => {
     }
   };
 
-  // Resolve links in ORDER: page by page, with concurrency within each page
+  // Resolve ALL links in order: page by page, alphabetically
   const resolveAllLinks = async () => {
     setResolving(true);
     cancelRef.current = false;
 
-    // Get total count
     const { count: totalItems } = await supabase
       .from("content")
       .select("*", { count: "exact", head: true });
@@ -150,7 +151,6 @@ const BancoPage = () => {
       offset += 1000;
     }
 
-    // Process page by page in order
     const PAGE_SIZE = 50;
     const CONCURRENCY = 15;
     let totalResolved = 0;
@@ -167,11 +167,9 @@ const BancoPage = () => {
 
       if (!pageItems?.length) break;
 
-      // Filter out already cached
       const toResolve = pageItems.filter(i => !cachedIds.has(i.tmdb_id));
 
       if (toResolve.length > 0) {
-        // Resolve this page's items with concurrency
         const queue = [...toResolve];
         const worker = async () => {
           while (queue.length > 0 && !cancelRef.current) {
@@ -198,12 +196,9 @@ const BancoPage = () => {
     fetchContent();
   };
 
-  const openPlayer = (item: ContentItem) => {
-    const status = videoStatuses.get(item.tmdb_id);
-    if (status?.video_url) {
-      const vType = status.video_type || (status.video_url.includes(".mp4") ? "mp4" : "m3u8");
-      window.open(`/player?url=${encodeURIComponent(status.video_url)}&type=${vType}&title=${encodeURIComponent(item.title)}&tmdb=${item.tmdb_id}&ct=${item.content_type}`, "_blank");
-    }
+  // Build API-style link for display
+  const getApiLink = (item: ContentItem) => {
+    return `/api/${item.content_type}/${item.tmdb_id}`;
   };
 
   const filteredItems = filterStatus === "all"
@@ -237,7 +232,7 @@ const BancoPage = () => {
           {resolving ? (
             <><Loader2 className="w-4 h-4 animate-spin" />Cancelar ({resolveProgress.current}/{resolveProgress.total})</>
           ) : (
-            <><RefreshCw className="w-4 h-4" />Resolver Links</>
+            <><RefreshCw className="w-4 h-4" />Resolver Todos</>
           )}
         </button>
       </div>
@@ -262,7 +257,7 @@ const BancoPage = () => {
       {resolving && resolveProgress.total > 0 && (
         <div className="glass p-3 sm:p-4 rounded-xl space-y-2">
           <div className="flex items-center justify-between text-xs sm:text-sm">
-            <span className="text-muted-foreground">Resolvendo links em ordem...</span>
+            <span className="text-muted-foreground">Resolvendo links (pág por pág, A→Z)...</span>
             <span className="font-medium text-primary">
               {resolveProgress.current}/{resolveProgress.total} ({Math.round((resolveProgress.current / resolveProgress.total) * 100)}%)
             </span>
@@ -332,7 +327,7 @@ const BancoPage = () => {
                   )}
                   <div className="flex-1 min-w-0">
                     <p className="text-xs font-medium truncate">{item.title}</p>
-                    <div className="flex items-center gap-2 mt-1">
+                    <div className="flex items-center gap-2 mt-0.5">
                       <span className={`text-[9px] px-1.5 py-0.5 rounded-full border ${
                         item.content_type === "movie" ? "bg-blue-500/10 text-blue-400 border-blue-500/20" : "bg-purple-500/10 text-purple-400 border-purple-500/20"
                       }`}>{item.content_type === "movie" ? "Filme" : "Série"}</span>
@@ -341,15 +336,17 @@ const BancoPage = () => {
                       ) : (
                         <XCircle className="w-3.5 h-3.5 text-muted-foreground/40" />
                       )}
-                      {status?.provider && <span className="text-[9px] text-muted-foreground">{status.provider}</span>}
                     </div>
+                    {status?.has_video && (
+                      <p className="text-[9px] text-primary/60 font-mono mt-0.5 truncate">{getApiLink(item)}</p>
+                    )}
                   </div>
                   <div className="flex items-center gap-1">
                     <button onClick={() => resolveLink(item)} className="w-7 h-7 rounded-lg bg-white/5 text-muted-foreground flex items-center justify-center hover:bg-white/10">
                       <RefreshCw className="w-3 h-3" />
                     </button>
                     {status?.has_video && (
-                      <button onClick={() => openPlayer(item)} className="w-7 h-7 rounded-lg bg-primary/20 text-primary flex items-center justify-center hover:bg-primary/30">
+                      <button onClick={() => setPlayerItem(item)} className="w-7 h-7 rounded-lg bg-primary/20 text-primary flex items-center justify-center hover:bg-primary/30">
                         <Play className="w-3 h-3" />
                       </button>
                     )}
@@ -368,7 +365,8 @@ const BancoPage = () => {
                     <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wider px-4 py-3">Título</th>
                     <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wider px-4 py-3">Tipo</th>
                     <th className="text-center text-xs font-medium text-muted-foreground uppercase tracking-wider px-4 py-3">Vídeo</th>
-                    <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wider px-4 py-3 hidden md:table-cell">Provider</th>
+                    <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wider px-4 py-3 hidden md:table-cell">Link API</th>
+                    <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wider px-4 py-3 hidden lg:table-cell">Provider</th>
                     <th className="text-right text-xs font-medium text-muted-foreground uppercase tracking-wider px-4 py-3">Ações</th>
                   </tr>
                 </thead>
@@ -399,6 +397,15 @@ const BancoPage = () => {
                           {status?.has_video ? <CheckCircle className="w-4 h-4 text-emerald-400 mx-auto" /> : <XCircle className="w-4 h-4 text-muted-foreground/40 mx-auto" />}
                         </td>
                         <td className="px-4 py-3 hidden md:table-cell">
+                          {status?.has_video ? (
+                            <span className="text-[10px] text-primary/70 font-mono bg-primary/5 px-2 py-1 rounded-lg border border-primary/10">
+                              {getApiLink(item)}
+                            </span>
+                          ) : (
+                            <span className="text-[10px] text-muted-foreground/40">—</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 hidden lg:table-cell">
                           <span className="text-xs text-muted-foreground">{status?.provider || "—"}</span>
                         </td>
                         <td className="px-4 py-3">
@@ -408,7 +415,7 @@ const BancoPage = () => {
                             </button>
                             {status?.has_video && (
                               <>
-                                <button onClick={() => openPlayer(item)} className="w-7 h-7 rounded-lg bg-primary/20 text-primary flex items-center justify-center hover:bg-primary/30" title="Abrir no player">
+                                <button onClick={() => setPlayerItem(item)} className="w-7 h-7 rounded-lg bg-primary/20 text-primary flex items-center justify-center hover:bg-primary/30" title="Abrir player">
                                   <Play className="w-3.5 h-3.5" />
                                 </button>
                                 <a href={status.video_url} target="_blank" rel="noopener noreferrer" className="w-7 h-7 rounded-lg bg-white/5 text-muted-foreground flex items-center justify-center hover:bg-white/10" title="Link direto">
@@ -442,6 +449,21 @@ const BancoPage = () => {
           )}
         </>
       )}
+
+      {/* Player Modal */}
+      {playerItem && (() => {
+        const status = videoStatuses.get(playerItem.tmdb_id);
+        return status?.has_video ? (
+          <PlayerModal
+            tmdbId={playerItem.tmdb_id}
+            imdbId={playerItem.imdb_id}
+            type={playerItem.content_type === "movie" ? "movie" : "tv"}
+            title={playerItem.title}
+            audioTypes={["legendado"]}
+            onClose={() => setPlayerItem(null)}
+          />
+        ) : null;
+      })()}
     </div>
   );
 };
