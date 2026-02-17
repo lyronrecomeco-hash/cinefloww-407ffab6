@@ -81,7 +81,7 @@ const DetailsPage = ({ type }: DetailsPageProps) => {
     setShowAudioModal(false);
     const params = new URLSearchParams({ title: getDisplayTitle(detail), audio });
     if (imdbId) params.set("imdb", imdbId);
-    navigate(`/assistir/${type}/${id}?${params.toString()}`);
+    navigate(`/player/${type === "tv" ? "series" : "movie"}/${id}?${params.toString()}`);
   };
 
   return (

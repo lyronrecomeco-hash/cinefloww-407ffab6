@@ -2,13 +2,12 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { lazy, Suspense } from "react";
 import Index from "./pages/Index";
 import DetailsPage from "./pages/DetailsPage";
 import MoviesPage from "./pages/MoviesPage";
 import SeriesPage from "./pages/SeriesPage";
-import WatchPage from "./pages/WatchPage";
 import PlayerPage from "./pages/PlayerPage";
 import ApiRedirect from "./pages/ApiRedirect";
 import NotFound from "./pages/NotFound";
@@ -46,7 +45,7 @@ const App = () => (
             <Route path="/series" element={<SeriesPage />} />
             <Route path="/filme/:id" element={<DetailsPage type="movie" />} />
             <Route path="/serie/:id" element={<DetailsPage type="tv" />} />
-            <Route path="/assistir/:type/:id" element={<WatchPage />} />
+            <Route path="/assistir/:type/:id" element={<ApiRedirect />} />
             <Route path="/player" element={<PlayerPage />} />
             <Route path="/player/:type/:id" element={<PlayerPage />} />
 

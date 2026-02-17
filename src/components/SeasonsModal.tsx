@@ -52,7 +52,7 @@ const SeasonsModal = ({ seriesId, seriesTitle, seasons, imdbId, onClose }: Seaso
     });
     if (imdbId) params.set("imdb", imdbId);
     onClose();
-    navigate(`/assistir/tv/${seriesId}?${params.toString()}`);
+    navigate(`/player/series/${seriesId}?${params.toString()}`);
   };
 
   return (
