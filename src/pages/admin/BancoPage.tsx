@@ -40,6 +40,7 @@ const BancoPage = () => {
   const { toast } = useToast();
   const [stats, setStats] = useState({ total: 0, withVideo: 0, withoutVideo: 0 });
   const [playerItem, setPlayerItem] = useState<ContentItem | null>(null);
+  const [providerMenu, setProviderMenu] = useState<string | null>(null); // item.id when menu is open
 
   const fetchContent = useCallback(async () => {
     setLoading(true);
@@ -145,12 +146,16 @@ const BancoPage = () => {
     return () => { supabase.removeChannel(channel); };
   }, [resolving]);
 
-  const resolveLink = async (item: ContentItem) => {
-    const status = videoStatuses.get(item.tmdb_id);
-    if (status?.has_video) return status;
+  const resolveLink = async (item: ContentItem, forceProvider?: string) => {
     try {
       const { data } = await supabase.functions.invoke("extract-video", {
-        body: { tmdb_id: item.tmdb_id, imdb_id: item.imdb_id, content_type: item.content_type, audio_type: "legendado" },
+        body: {
+          tmdb_id: item.tmdb_id,
+          imdb_id: item.imdb_id,
+          content_type: item.content_type,
+          audio_type: "legendado",
+          force_provider: forceProvider || undefined,
+        },
       });
       const newStatus: VideoStatus = {
         tmdb_id: item.tmdb_id,
@@ -160,10 +165,17 @@ const BancoPage = () => {
         video_type: data?.type,
       };
       setVideoStatuses(prev => new Map(prev).set(item.tmdb_id, newStatus));
+      toast({ title: data?.url ? "Link extraído!" : "Sem resultado", description: `${item.title} — ${data?.provider || "nenhum"}` });
       return newStatus;
     } catch {
+      toast({ title: "Erro", description: `Falha ao extrair ${item.title}`, variant: "destructive" });
       return { tmdb_id: item.tmdb_id, has_video: false };
     }
+  };
+
+  const handleProviderSelect = (item: ContentItem, provider: string) => {
+    setProviderMenu(null);
+    resolveLink(item, provider);
   };
 
   // Resolve ALL links via server-side batch-resolve — fires rapidly, realtime updates UI
@@ -356,10 +368,17 @@ const BancoPage = () => {
                       <p className="text-[9px] text-primary/60 font-mono mt-0.5 truncate">{getApiLink(item)}</p>
                     )}
                   </div>
-                  <div className="flex items-center gap-1">
-                    <button onClick={() => resolveLink(item)} className="w-7 h-7 rounded-lg bg-white/5 text-muted-foreground flex items-center justify-center hover:bg-white/10">
+                  <div className="flex items-center gap-1 relative">
+                    <button onClick={() => setProviderMenu(providerMenu === item.id ? null : item.id)} className="w-7 h-7 rounded-lg bg-white/5 text-muted-foreground flex items-center justify-center hover:bg-white/10">
                       <RefreshCw className="w-3 h-3" />
                     </button>
+                    {providerMenu === item.id && (
+                      <div className="absolute right-0 top-8 z-50 bg-card border border-border rounded-xl shadow-xl p-1.5 min-w-[130px] animate-fade-in">
+                        <button onClick={() => handleProviderSelect(item, "cineveo")} className="w-full text-left px-3 py-1.5 text-[11px] font-medium rounded-lg hover:bg-primary/10 text-foreground">CineVeo</button>
+                        <button onClick={() => handleProviderSelect(item, "megaembed")} className="w-full text-left px-3 py-1.5 text-[11px] font-medium rounded-lg hover:bg-primary/10 text-foreground">MegaEmbed</button>
+                        <button onClick={() => handleProviderSelect(item, "embedplay")} className="w-full text-left px-3 py-1.5 text-[11px] font-medium rounded-lg hover:bg-primary/10 text-foreground">EmbedPlay</button>
+                      </div>
+                    )}
                     {status?.has_video && (
                       <button onClick={() => setPlayerItem(item)} className="w-7 h-7 rounded-lg bg-primary/20 text-primary flex items-center justify-center hover:bg-primary/30">
                         <Play className="w-3 h-3" />
@@ -425,9 +444,18 @@ const BancoPage = () => {
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-1.5 justify-end">
-                            <button onClick={() => resolveLink(item)} className="w-7 h-7 rounded-lg bg-white/5 text-muted-foreground flex items-center justify-center hover:bg-white/10" title="Resolver link">
-                              <RefreshCw className="w-3.5 h-3.5" />
-                            </button>
+                            <div className="relative">
+                              <button onClick={() => setProviderMenu(providerMenu === item.id ? null : item.id)} className="w-7 h-7 rounded-lg bg-white/5 text-muted-foreground flex items-center justify-center hover:bg-white/10" title="Resolver link">
+                                <RefreshCw className="w-3.5 h-3.5" />
+                              </button>
+                              {providerMenu === item.id && (
+                                <div className="absolute right-0 top-8 z-50 bg-card border border-border rounded-xl shadow-xl p-1.5 min-w-[130px] animate-fade-in">
+                                  <button onClick={() => handleProviderSelect(item, "cineveo")} className="w-full text-left px-3 py-1.5 text-[11px] font-medium rounded-lg hover:bg-primary/10 text-foreground">CineVeo</button>
+                                  <button onClick={() => handleProviderSelect(item, "megaembed")} className="w-full text-left px-3 py-1.5 text-[11px] font-medium rounded-lg hover:bg-primary/10 text-foreground">MegaEmbed</button>
+                                  <button onClick={() => handleProviderSelect(item, "embedplay")} className="w-full text-left px-3 py-1.5 text-[11px] font-medium rounded-lg hover:bg-primary/10 text-foreground">EmbedPlay</button>
+                                </div>
+                              )}
+                            </div>
                             {status?.has_video && (
                               <>
                                 <button onClick={() => setPlayerItem(item)} className="w-7 h-7 rounded-lg bg-primary/20 text-primary flex items-center justify-center hover:bg-primary/30" title="Abrir player">
