@@ -210,6 +210,24 @@ export type Database = {
           },
         ]
       }
+      resolve_failures: {
+        Row: {
+          attempted_at: string
+          content_type: string
+          tmdb_id: number
+        }
+        Insert: {
+          attempted_at?: string
+          content_type: string
+          tmdb_id: number
+        }
+        Update: {
+          attempted_at?: string
+          content_type?: string
+          tmdb_id?: number
+        }
+        Relationships: []
+      }
       site_settings: {
         Row: {
           id: string

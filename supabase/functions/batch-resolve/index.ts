@@ -6,8 +6,8 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const BATCH_SIZE = 20; // items per invocation
-const CONCURRENCY = 5; // parallel extract calls
+const BATCH_SIZE = 30;
+const CONCURRENCY = 10;
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -23,61 +23,29 @@ Deno.serve(async (req) => {
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
   try {
-    // Get all cached tmdb_ids
-    const cachedIds = new Set<number>();
-    let offset = 0;
-    while (true) {
-      const { data } = await supabase
-        .from("video_cache")
-        .select("tmdb_id")
-        .gt("expires_at", new Date().toISOString())
-        .range(offset, offset + 999);
-      if (!data?.length) break;
-      data.forEach((c: { tmdb_id: number }) => cachedIds.add(c.tmdb_id));
-      if (data.length < 1000) break;
-      offset += 1000;
+    // Use a single SQL query to find content missing from both video_cache AND resolve_failures
+    // This is much more efficient than fetching all IDs
+    const { data: missing, error: qErr } = await supabase.rpc("get_unresolved_content", {
+      batch_limit: BATCH_SIZE,
+    });
+
+    if (qErr) {
+      // If RPC doesn't exist yet, fall back to manual query
+      console.log(`[batch-resolve] RPC not found, using fallback query`);
+      return await fallbackResolve(supabase, supabaseUrl, serviceKey);
     }
 
-    console.log(`[batch-resolve] ${cachedIds.size} items already cached`);
-
-    // Get next batch of content without cache, ordered alphabetically
-    const { data: items, error } = await supabase
-      .from("content")
-      .select("tmdb_id, imdb_id, content_type, title")
-      .order("title", { ascending: true })
-      .limit(500); // fetch more to filter
-
-    if (error || !items?.length) {
-      return new Response(JSON.stringify({ message: "No items found", resolved: 0 }), {
+    if (!missing?.length) {
+      return new Response(JSON.stringify({ message: "All items processed!", resolved: 0, remaining: 0 }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // Filter out already cached
-    const missing = items.filter((i: { tmdb_id: number }) => !cachedIds.has(i.tmdb_id));
-    const batch = missing.slice(0, BATCH_SIZE);
+    console.log(`[batch-resolve] Processing ${missing.length} items`);
 
-    if (batch.length === 0) {
-      // Try next page
-      const { data: items2 } = await supabase
-        .from("content")
-        .select("tmdb_id, imdb_id, content_type, title")
-        .order("title", { ascending: true })
-        .range(500, 999);
-
-      const missing2 = (items2 || []).filter((i: { tmdb_id: number }) => !cachedIds.has(i.tmdb_id));
-      if (missing2.length === 0) {
-        return new Response(JSON.stringify({ message: "All items resolved!", resolved: 0, remaining: 0 }), {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-    }
-
-    console.log(`[batch-resolve] Processing ${batch.length} items, ${missing.length} total missing in first 500`);
-
-    // Process batch with concurrency
     let resolved = 0;
     let failed = 0;
+    const failedItems: { tmdb_id: number; content_type: string }[] = [];
 
     const processItem = async (item: { tmdb_id: number; imdb_id: string | null; content_type: string; title: string }) => {
       try {
@@ -101,16 +69,18 @@ Deno.serve(async (req) => {
           console.log(`[batch-resolve] ✓ ${item.title} → ${data.provider}`);
         } else {
           failed++;
-          console.log(`[batch-resolve] ✗ ${item.title} → no link`);
+          failedItems.push({ tmdb_id: item.tmdb_id, content_type: item.content_type });
+          console.log(`[batch-resolve] ✗ ${item.title}`);
         }
       } catch (err) {
         failed++;
-        console.log(`[batch-resolve] ✗ ${item.title} → error: ${err}`);
+        failedItems.push({ tmdb_id: item.tmdb_id, content_type: item.content_type });
+        console.log(`[batch-resolve] ✗ ${item.title} → ${err}`);
       }
     };
 
-    // Run with concurrency limit
-    const queue = [...batch];
+    // Run with concurrency
+    const queue = [...missing];
     const workers = Array.from({ length: Math.min(CONCURRENCY, queue.length) }, async () => {
       while (queue.length > 0) {
         const item = queue.shift();
@@ -120,14 +90,19 @@ Deno.serve(async (req) => {
 
     await Promise.all(workers);
 
-    const totalMissing = missing.length - resolved;
+    // Record failures so we don't retry them
+    if (failedItems.length > 0) {
+      await supabase.from("resolve_failures").upsert(
+        failedItems.map(f => ({ tmdb_id: f.tmdb_id, content_type: f.content_type, attempted_at: new Date().toISOString() })),
+        { onConflict: "tmdb_id,content_type" }
+      );
+    }
 
     return new Response(JSON.stringify({
-      message: `Batch complete`,
+      message: "Batch complete",
       resolved,
       failed,
-      remaining: Math.max(0, totalMissing),
-      totalCached: cachedIds.size + resolved,
+      batchSize: missing.length,
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
@@ -139,3 +114,116 @@ Deno.serve(async (req) => {
     });
   }
 });
+
+// Fallback when RPC doesn't exist
+async function fallbackResolve(supabase: any, supabaseUrl: string, serviceKey: string) {
+  // Get cached tmdb_ids
+  const cachedIds = new Set<number>();
+  let offset = 0;
+  while (true) {
+    const { data } = await supabase
+      .from("video_cache")
+      .select("tmdb_id")
+      .gt("expires_at", new Date().toISOString())
+      .range(offset, offset + 999);
+    if (!data?.length) break;
+    data.forEach((c: { tmdb_id: number }) => cachedIds.add(c.tmdb_id));
+    if (data.length < 1000) break;
+    offset += 1000;
+  }
+
+  // Get failed tmdb_ids
+  const failedIds = new Set<number>();
+  offset = 0;
+  while (true) {
+    const { data } = await supabase
+      .from("resolve_failures")
+      .select("tmdb_id")
+      .range(offset, offset + 999);
+    if (!data?.length) break;
+    data.forEach((c: { tmdb_id: number }) => failedIds.add(c.tmdb_id));
+    if (data.length < 1000) break;
+    offset += 1000;
+  }
+
+  // Paginate through content to find missing
+  let contentOffset = 0;
+  const batch: any[] = [];
+  while (batch.length < BATCH_SIZE) {
+    const { data: items } = await supabase
+      .from("content")
+      .select("tmdb_id, imdb_id, content_type, title")
+      .order("title", { ascending: true })
+      .range(contentOffset, contentOffset + 199);
+    if (!items?.length) break;
+    for (const item of items) {
+      if (!cachedIds.has(item.tmdb_id) && !failedIds.has(item.tmdb_id)) {
+        batch.push(item);
+        if (batch.length >= BATCH_SIZE) break;
+      }
+    }
+    contentOffset += 200;
+  }
+
+  if (batch.length === 0) {
+    return new Response(JSON.stringify({ message: "All items processed!", resolved: 0, remaining: 0 }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  console.log(`[batch-resolve] Fallback: processing ${batch.length} items`);
+
+  let resolved = 0;
+  let failed = 0;
+  const failedItems: { tmdb_id: number; content_type: string }[] = [];
+
+  const processItem = async (item: any) => {
+    try {
+      const res = await fetch(`${supabaseUrl}/functions/v1/extract-video`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${serviceKey}`,
+        },
+        body: JSON.stringify({
+          tmdb_id: item.tmdb_id,
+          imdb_id: item.imdb_id,
+          content_type: item.content_type,
+          audio_type: "legendado",
+        }),
+      });
+      const data = await res.json();
+      if (data?.url) {
+        resolved++;
+        console.log(`[batch-resolve] ✓ ${item.title} → ${data.provider}`);
+      } else {
+        failed++;
+        failedItems.push({ tmdb_id: item.tmdb_id, content_type: item.content_type });
+        console.log(`[batch-resolve] ✗ ${item.title}`);
+      }
+    } catch {
+      failed++;
+      failedItems.push({ tmdb_id: item.tmdb_id, content_type: item.content_type });
+    }
+  };
+
+  const queue = [...batch];
+  const workers = Array.from({ length: Math.min(CONCURRENCY, queue.length) }, async () => {
+    while (queue.length > 0) {
+      const item = queue.shift();
+      if (item) await processItem(item);
+    }
+  });
+  await Promise.all(workers);
+
+  if (failedItems.length > 0) {
+    await supabase.from("resolve_failures").upsert(
+      failedItems.map(f => ({ tmdb_id: f.tmdb_id, content_type: f.content_type, attempted_at: new Date().toISOString() })),
+      { onConflict: "tmdb_id,content_type" }
+    );
+  }
+
+  return new Response(JSON.stringify({ message: "Batch complete", resolved, failed }), {
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
