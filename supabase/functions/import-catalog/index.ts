@@ -66,7 +66,6 @@ async function getTotalPages(type: "movie" | "tv"): Promise<number> {
   return low;
 }
 
-// Parallel TMDB fetch with concurrency limit
 async function fetchTMDBBatch(items: { tmdbId: number; type: "movie" | "tv" }[], concurrency = 8): Promise<Map<number, any>> {
   const results = new Map<number, any>();
   const queue = [...items];
@@ -90,10 +89,14 @@ async function fetchTMDBBatch(items: { tmdbId: number; type: "movie" | "tv" }[],
   return results;
 }
 
-// Max pages per single call
+function sanitizeDate(d: string | null | undefined): string | null {
+  if (!d || d === "0000-00-00" || d.startsWith("0000")) return null;
+  return d;
+}
+
 const MAX_PAGES_PER_CALL = 20;
 
-Deno.serve(async (req) => {
+Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS")
     return new Response(null, { headers: corsHeaders });
 
@@ -122,7 +125,6 @@ Deno.serve(async (req) => {
     const enrichWithTmdb: boolean = body.enrich !== false;
     const cineveoType: "movie" | "tv" = contentType === "movie" ? "movie" : "tv";
 
-    // ── COUNT action ──
     if (action === "count") {
       const totalAvailable = await getTotalPages(cineveoType);
       return new Response(
@@ -131,10 +133,8 @@ Deno.serve(async (req) => {
       );
     }
 
-    // ── SYNC-CHECK action: compare CineVeo first page sample with DB ──
     if (action === "sync-check") {
       const totalPages = await getTotalPages(cineveoType);
-      // Sample pages 1, middle, last to estimate total unique items
       const samplePages = [1, Math.ceil(totalPages / 2), totalPages];
       const sampleItems: string[] = [];
       for (const p of samplePages) {
@@ -142,7 +142,6 @@ Deno.serve(async (req) => {
         items.forEach(i => sampleItems.push(i.tmdb_id));
       }
 
-      // Count existing in DB
       const { count: dbCount } = await adminClient
         .from("content")
         .select("*", { count: "exact", head: true })
@@ -162,11 +161,9 @@ Deno.serve(async (req) => {
       );
     }
 
-    // ── BATCH IMPORT action ── (processes MAX_PAGES_PER_CALL pages)
     const endPage = startPage + MAX_PAGES_PER_CALL - 1;
     console.log(`[import] CineVeo ${cineveoType} pages ${startPage}-${endPage}`);
 
-    // Fetch all pages in parallel
     const pagePromises = [];
     for (let p = startPage; p <= endPage; p++) {
       pagePromises.push(fetchCineveoPage(cineveoType, p).then(items => ({ page: p, items })));
@@ -177,7 +174,6 @@ Deno.serve(async (req) => {
     const seenIds = new Set<string>();
     let lastPageWithData = startPage - 1;
 
-    // Sort by page number to maintain order
     pageResults.sort((a, b) => a.page - b.page);
     for (const { page: pg, items } of pageResults) {
       if (items.length === 0) break;
@@ -192,7 +188,6 @@ Deno.serve(async (req) => {
 
     console.log(`[import] Fetched ${allItems.length} items from pages ${startPage}-${lastPageWithData}`);
 
-    // Enrich with TMDB in parallel
     let tmdbResults = new Map<number, any>();
     if (enrichWithTmdb && allItems.length > 0) {
       const tmdbRequests = allItems.map(item => ({
@@ -202,7 +197,6 @@ Deno.serve(async (req) => {
       tmdbResults = await fetchTMDBBatch(tmdbRequests, 8);
     }
 
-    // Build rows
     const rows = allItems.map(item => {
       const tmdbId = parseInt(item.tmdb_id);
       const detail = tmdbResults.get(tmdbId);
@@ -217,7 +211,7 @@ Deno.serve(async (req) => {
           overview: detail.overview || "",
           poster_path: detail.poster_path || item.poster_path || null,
           backdrop_path: detail.backdrop_path || null,
-          release_date: detail.release_date || detail.first_air_date || item.release_date || null,
+          release_date: sanitizeDate(detail.release_date || detail.first_air_date || item.release_date),
           vote_average: detail.vote_average || 0,
           runtime: detail.runtime || (parseInt(item.runtime) || null),
           number_of_seasons: detail.number_of_seasons || null,
@@ -233,7 +227,7 @@ Deno.serve(async (req) => {
         content_type: contentType,
         title: item.title || item.name || "Sem título",
         poster_path: item.poster_path || null,
-        release_date: item.release_date || null,
+        release_date: sanitizeDate(item.release_date),
         runtime: parseInt(item.runtime) || null,
         vote_average: parseFloat(item.vote_average) || 0,
         status: "published",
@@ -243,7 +237,6 @@ Deno.serve(async (req) => {
       };
     });
 
-    // Upsert in batches of 100 for reliability
     let imported = 0;
     const errors: string[] = [];
     const BATCH_SIZE = 100;
