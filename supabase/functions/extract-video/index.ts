@@ -21,7 +21,38 @@ function slugify(text: string): string {
     .replace(/-+/g, "-");
 }
 
-// ── CineVeo extraction (improved for series) ─────────────────────────
+// ── CineVeo slug discovery via API ────────────────────────────────────
+async function findCineveoSlug(
+  tmdbId: number,
+  type: "movie" | "tv",
+): Promise<string | null> {
+  const cineveoType = type === "movie" ? "movie" : "tv";
+  // Sample pages spread across the catalog to find the tmdb_id
+  const pagesToTry = [1, 2, 3, 5, 10, 20, 50, 100, 150, 200];
+
+  for (const page of pagesToTry) {
+    try {
+      const url = `https://cineveo.site/category.php?fetch_mode=1&type=${cineveoType}&page=${page}&genre=`;
+      const res = await fetch(url, {
+        headers: { "User-Agent": UA, Accept: "application/json, */*" },
+      });
+      if (!res.ok) continue;
+      const data = await res.json();
+      if (!data.success || !Array.isArray(data.results)) continue;
+
+      const found = data.results.find(
+        (item: any) => String(item.tmdb_id) === String(tmdbId),
+      );
+      if (found?.slug) {
+        console.log(`[cineveo] Found slug via API: ${found.slug} (page ${page})`);
+        return found.slug;
+      }
+    } catch { /* skip page */ }
+  }
+  return null;
+}
+
+// ── CineVeo extraction (improved with API slug discovery) ────────────
 async function tryCineveo(
   tmdbId: number,
   contentType: string,
@@ -47,10 +78,9 @@ async function tryCineveo(
     return null;
   }
 
-  // Also try original title as fallback
   const originalTitle = isMovie ? tmdbData.original_title : tmdbData.original_name;
 
-  // 2. Try slug-based URL with multiple slug variations
+  // 2. Build slug candidates
   const slugs = [
     `${slugify(title)}-${tmdbId}`,
     ...(originalTitle && originalTitle !== title ? [`${slugify(originalTitle)}-${tmdbId}`] : []),
@@ -58,6 +88,31 @@ async function tryCineveo(
 
   const pathType = isMovie ? "filme" : "serie";
 
+  // 3. Try slug-based URLs first
+  const result = await tryCineveoSlugs(slugs, pathType, isMovie, season, episode);
+  if (result) return result;
+
+  // 4. Fallback: discover correct slug via API
+  console.log(`[cineveo] Slug-based attempts failed, trying API discovery...`);
+  const discoveredSlug = await findCineveoSlug(tmdbId, tmdbType as "movie" | "tv");
+  if (discoveredSlug && !slugs.includes(discoveredSlug)) {
+    console.log(`[cineveo] Trying discovered slug: ${discoveredSlug}`);
+    const apiResult = await tryCineveoSlugs([discoveredSlug], pathType, isMovie, season, episode);
+    if (apiResult) return apiResult;
+  }
+
+  console.log("[cineveo] No video URL found");
+  return null;
+}
+
+// ── Try fetching video from cineveo using slug list ──────────────────
+async function tryCineveoSlugs(
+  slugs: string[],
+  pathType: string,
+  isMovie: boolean,
+  season?: number,
+  episode?: number,
+): Promise<{ url: string; type: "mp4" | "m3u8" } | null> {
   for (const slug of slugs) {
     const pageUrl = `https://cineveo.site/${pathType}/${slug}.html`;
     console.log(`[cineveo] Trying: ${pageUrl}`);
@@ -74,7 +129,6 @@ async function tryCineveo(
 
     const html = await pageRes.text();
 
-    // Check for soft 404
     if (html.includes('text-yellow-500">404')) {
       console.log(`[cineveo] Soft 404 detected`);
       continue;
@@ -92,7 +146,6 @@ async function tryCineveo(
       html.match(/src=["'](\/player\/index\.php[^"']+)/i);
 
     if (!iframeMatch?.[1]) {
-      // Try direct CDN link
       const cdnDirect = html.match(/(https?:\/\/cdn\.cineveo\.site\/[^\s"'<>\\]+\.mp4)/i);
       if (cdnDirect?.[1]) {
         console.log(`[cineveo] Found direct CDN in page: ${cdnDirect[1]}`);
@@ -102,11 +155,9 @@ async function tryCineveo(
       continue;
     }
 
-    // Fix relative path
     let playerPath = iframeMatch[1].replace(/^\.\.\//, "/");
     let playerUrl = `https://cineveo.site${playerPath}`;
 
-    // For series, append season/episode
     if (!isMovie && season && episode && !playerPath.includes("s=") && !playerPath.includes("ep=")) {
       const sep = playerPath.includes("?") ? "&" : "?";
       playerUrl += `${sep}s=${season}&e=${episode}`;
@@ -114,7 +165,6 @@ async function tryCineveo(
 
     console.log(`[cineveo] Player URL: ${playerUrl}`);
 
-    // Fetch the player page
     const playerRes = await fetch(playerUrl, {
       headers: { "User-Agent": UA, "Referer": pageUrl, "Accept": "text/html,*/*" },
       redirect: "follow",
@@ -127,14 +177,12 @@ async function tryCineveo(
 
     const playerHtml = await playerRes.text();
 
-    // Extract CDN mp4 URL
     const cdnMatch = playerHtml.match(/(https?:\/\/cdn\.cineveo\.site\/[^\s"'<>\\]+\.mp4)/i);
     if (cdnMatch?.[1]) {
       console.log(`[cineveo] Found CDN URL: ${cdnMatch[1]}`);
       return { url: cdnMatch[1], type: "mp4" };
     }
 
-    // Try VOD URL from v= parameter
     const vodMatch = playerPath.match(/[?&]v=([^&]+)/);
     if (vodMatch?.[1]) {
       const decodedVod = decodeURIComponent(vodMatch[1]);
@@ -145,7 +193,6 @@ async function tryCineveo(
       } catch { /* skip */ }
     }
 
-    // Fallback: any mp4 in player HTML
     const mp4Match = playerHtml.match(/(https?:\/\/[^\s"'<>\\]+\.mp4)/i);
     if (mp4Match?.[1]) {
       console.log(`[cineveo] Found generic mp4: ${mp4Match[1]}`);
@@ -153,7 +200,6 @@ async function tryCineveo(
     }
   }
 
-  console.log("[cineveo] No video URL found");
   return null;
 }
 
@@ -465,8 +511,15 @@ Deno.serve(async (req) => {
       }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    console.log("[extract] No direct video URL found");
-    return new Response(JSON.stringify({ url: null, provider: "none" }), {
+    console.log(`[extract] No direct video URL found (force_provider=${force_provider || "all"})`);
+    return new Response(JSON.stringify({
+      url: null,
+      provider: "none",
+      tried: force_provider || "all",
+      message: force_provider
+        ? `Provedor "${force_provider}" não possui este conteúdo`
+        : "Nenhum provedor retornou vídeo",
+    }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {

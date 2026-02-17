@@ -165,7 +165,15 @@ const BancoPage = () => {
         video_type: data?.type,
       };
       setVideoStatuses(prev => new Map(prev).set(item.tmdb_id, newStatus));
-      toast({ title: data?.url ? "Link extraído!" : "Sem resultado", description: `${item.title} — ${data?.provider || "nenhum"}` });
+      if (data?.url) {
+        toast({ title: "✅ Link extraído!", description: `${item.title} — via ${data.provider}` });
+      } else {
+        toast({
+          title: "❌ Não encontrado",
+          description: data?.message || `${item.title} — ${forceProvider || "nenhum provedor"} não possui este conteúdo`,
+          variant: "destructive",
+        });
+      }
       return newStatus;
     } catch {
       toast({ title: "Erro", description: `Falha ao extrair ${item.title}`, variant: "destructive" });
