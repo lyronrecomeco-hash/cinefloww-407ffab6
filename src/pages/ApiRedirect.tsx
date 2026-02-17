@@ -8,7 +8,8 @@ const ApiRedirect = () => {
   useEffect(() => {
     // Redirect /api/:type/:id directly to /player/:type/:id
     const playerType = type === "movie" ? "movie" : "series";
-    navigate(`/player/${playerType}/${id}`, { replace: true });
+    const searchStr = window.location.search;
+    navigate(`/player/${playerType}/${id}${searchStr}`, { replace: true });
   }, [type, id, navigate]);
 
   return (

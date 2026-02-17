@@ -36,6 +36,7 @@ const BancoPage = () => {
   const [resolving, setResolving] = useState(false);
   const [resolveProgress, setResolveProgress] = useState({ current: 0, total: 0 });
   const cancelRef = useRef(false);
+  const autoResolveStarted = useRef(false);
   const { toast } = useToast();
   const [stats, setStats] = useState({ total: 0, withVideo: 0, withoutVideo: 0 });
   const [playerItem, setPlayerItem] = useState<ContentItem | null>(null);
@@ -104,6 +105,15 @@ const BancoPage = () => {
     fetchContent();
     fetchStats();
   }, [fetchContent, fetchStats]);
+
+  // Auto-resolve on mount
+  useEffect(() => {
+    if (autoResolveStarted.current) return;
+    if (stats.withoutVideo > 0) {
+      autoResolveStarted.current = true;
+      resolveAllLinks();
+    }
+  }, [stats.withoutVideo]);
 
   // Realtime subscription for live updates
   useEffect(() => {

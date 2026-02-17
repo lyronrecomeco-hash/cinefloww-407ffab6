@@ -41,6 +41,8 @@ const PlayerPage = () => {
   const subtitle = searchParams.get("subtitle") || undefined;
   const videoUrl = searchParams.get("url");
   const videoType = (searchParams.get("type") as "mp4" | "m3u8") || "m3u8";
+  const audioParam = searchParams.get("audio") || "legendado";
+  const imdbId = searchParams.get("imdb") || null;
   const tmdbId = params.id ? Number(params.id) : (searchParams.get("tmdb") ? Number(searchParams.get("tmdb")) : undefined);
   const contentType = params.type || searchParams.get("ct") || "movie";
   const season = searchParams.get("s") ? Number(searchParams.get("s")) : undefined;
@@ -51,29 +53,59 @@ const PlayerPage = () => {
   const [bankLoading, setBankLoading] = useState(false);
   const [bankTitle, setBankTitle] = useState(title);
 
-  // If accessed via /player/:type/:id, fetch from video_cache
+  // If accessed via /player/:type/:id, fetch from video_cache then fallback to extract-video
   useEffect(() => {
     if (!params.id || !params.type) return;
     setBankLoading(true);
     const load = async () => {
       const cType = params.type === "movie" ? "movie" : "series";
-      // Get video from cache
-      const { data: cached } = await supabase
+      const aType = audioParam || "legendado";
+
+      // 1. Check video_cache first
+      let cacheQuery = supabase
         .from("video_cache")
         .select("video_url, video_type, provider")
         .eq("tmdb_id", Number(params.id))
         .eq("content_type", cType)
-        .gt("expires_at", new Date().toISOString())
-        .limit(1)
-        .maybeSingle();
+        .eq("audio_type", aType)
+        .gt("expires_at", new Date().toISOString());
 
-      if (cached) {
+      if (season) cacheQuery = cacheQuery.eq("season", season);
+      else cacheQuery = cacheQuery.is("season", null);
+      if (episode) cacheQuery = cacheQuery.eq("episode", episode);
+      else cacheQuery = cacheQuery.is("episode", null);
+
+      const { data: cached } = await cacheQuery.maybeSingle();
+
+      if (cached?.video_url) {
         setBankSources([{
           url: cached.video_url,
           quality: "auto",
           provider: cached.provider || "banco",
           type: (cached.video_type === "mp4" ? "mp4" : "m3u8") as "mp4" | "m3u8",
         }]);
+      } else {
+        // 2. Fallback: call extract-video
+        try {
+          const { data } = await supabase.functions.invoke("extract-video", {
+            body: {
+              tmdb_id: Number(params.id),
+              imdb_id: imdbId,
+              content_type: cType,
+              audio_type: aType,
+              season,
+              episode,
+            },
+          });
+          if (data?.url) {
+            setBankSources([{
+              url: data.url,
+              quality: "auto",
+              provider: data.provider || "extracted",
+              type: data.type === "mp4" ? "mp4" : "m3u8",
+            }]);
+          }
+        } catch { /* silent */ }
       }
 
       // Get title from content table
@@ -88,7 +120,7 @@ const PlayerPage = () => {
       setBankLoading(false);
     };
     load();
-  }, [params.id, params.type]);
+  }, [params.id, params.type, audioParam, imdbId, season, episode]);
 
   const sources: VideoSource[] = bankSources.length > 0
     ? bankSources
