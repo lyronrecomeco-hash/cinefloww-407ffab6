@@ -6,8 +6,9 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const BATCH_SIZE = 50;
+const BATCH_SIZE = 100;
 const CONCURRENCY = 15;
+const FAILURE_RETRY_HOURS = 12; // Retry failed items after 12 hours
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -23,7 +24,25 @@ Deno.serve(async (req) => {
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
   try {
-    // Use RPC for fast query
+    // 1. Clear old failures so they get retried
+    const retryThreshold = new Date(Date.now() - FAILURE_RETRY_HOURS * 60 * 60 * 1000).toISOString();
+    const { count: clearedCount } = await supabase
+      .from("resolve_failures")
+      .delete()
+      .lt("attempted_at", retryThreshold)
+      .select("*", { count: "exact", head: true });
+    
+    if (clearedCount && clearedCount > 0) {
+      console.log(`[batch-resolve] Cleared ${clearedCount} old failures for retry`);
+    }
+
+    // 2. Also clear expired video_cache entries so they get re-resolved
+    await supabase
+      .from("video_cache")
+      .delete()
+      .lt("expires_at", new Date().toISOString());
+
+    // 3. Get unresolved content
     const { data: missing, error: qErr } = await supabase.rpc("get_unresolved_content", {
       batch_limit: BATCH_SIZE,
     });
@@ -34,7 +53,13 @@ Deno.serve(async (req) => {
     }
 
     if (!missing?.length) {
-      return new Response(JSON.stringify({ message: "All items processed!", resolved: 0, failed: 0, remaining: 0 }), {
+      return new Response(JSON.stringify({ 
+        message: "All items processed!", 
+        resolved: 0, 
+        failed: 0, 
+        remaining: 0,
+        cleared_failures: clearedCount || 0,
+      }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -48,7 +73,7 @@ Deno.serve(async (req) => {
     const processItem = async (item: { tmdb_id: number; imdb_id: string | null; content_type: string; title: string }) => {
       try {
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 12000);
+        const timeout = setTimeout(() => controller.abort(), 15000);
 
         const res = await fetch(`${supabaseUrl}/functions/v1/extract-video`, {
           method: "POST",
@@ -62,13 +87,17 @@ Deno.serve(async (req) => {
             content_type: item.content_type,
             audio_type: "legendado",
             title: item.title,
+            // Skip playerflix in batch mode - it only works client-side via iframe
+            _skip_providers: ["playerflix"],
           }),
           signal: controller.signal,
         });
 
         clearTimeout(timeout);
         const data = await res.json();
-        if (data?.url) {
+        
+        // iframe-proxy is not a real video URL - count as failure
+        if (data?.url && data?.type !== "iframe-proxy") {
           resolved++;
           console.log(`[batch-resolve] ✓ ${item.title} → ${data.provider}`);
         } else {
@@ -105,6 +134,7 @@ Deno.serve(async (req) => {
       resolved,
       failed,
       batchSize: missing.length,
+      cleared_failures: clearedCount || 0,
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
@@ -166,17 +196,29 @@ async function fallbackResolve(supabase: any, supabaseUrl: string, serviceKey: s
   const processItem = async (item: any) => {
     try {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 12000);
+      const timeout = setTimeout(() => controller.abort(), 15000);
       const res = await fetch(`${supabaseUrl}/functions/v1/extract-video`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${serviceKey}` },
-        body: JSON.stringify({ tmdb_id: item.tmdb_id, imdb_id: item.imdb_id, content_type: item.content_type, audio_type: "legendado", title: item.title }),
+        body: JSON.stringify({ 
+          tmdb_id: item.tmdb_id, imdb_id: item.imdb_id, content_type: item.content_type, 
+          audio_type: "legendado", title: item.title,
+          _skip_providers: ["playerflix"],
+        }),
         signal: controller.signal,
       });
       clearTimeout(timeout);
       const data = await res.json();
-      if (data?.url) { resolved++; } else { failed++; failedItems.push({ tmdb_id: item.tmdb_id, content_type: item.content_type }); }
-    } catch { failed++; failedItems.push({ tmdb_id: item.tmdb_id, content_type: item.content_type }); }
+      if (data?.url && data?.type !== "iframe-proxy") { 
+        resolved++; 
+      } else { 
+        failed++; 
+        failedItems.push({ tmdb_id: item.tmdb_id, content_type: item.content_type }); 
+      }
+    } catch { 
+      failed++; 
+      failedItems.push({ tmdb_id: item.tmdb_id, content_type: item.content_type }); 
+    }
   };
 
   const queue = [...batch];

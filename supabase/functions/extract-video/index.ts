@@ -700,7 +700,8 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { tmdb_id, imdb_id, content_type, audio_type, season, episode, force_provider, title: reqTitle } = await req.json();
+    const { tmdb_id, imdb_id, content_type, audio_type, season, episode, force_provider, title: reqTitle, _skip_providers } = await req.json();
+    const skipProviders: string[] = Array.isArray(_skip_providers) ? _skip_providers : [];
 
     if (!tmdb_id) {
       return new Response(JSON.stringify({ error: "tmdb_id required" }), {
@@ -750,7 +751,7 @@ Deno.serve(async (req) => {
     let videoType: "mp4" | "m3u8" = "mp4";
     let provider = "cineveo";
 
-    const shouldTry = (p: string) => !force_provider || force_provider === p;
+    const shouldTry = (p: string) => (!force_provider || force_provider === p) && !skipProviders.includes(p);
 
     if (shouldTry("cineveo") && !videoUrl) {
       try {
