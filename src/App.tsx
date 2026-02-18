@@ -24,6 +24,7 @@ const CineveoTester = lazy(() => import("./pages/admin/CineveoTester"));
 const BancoPage = lazy(() => import("./pages/admin/BancoPage"));
 const RequestsPage = lazy(() => import("./pages/admin/RequestsPage"));
 const AlertsPage = lazy(() => import("./pages/admin/AlertsPage"));
+const LogsPage = lazy(() => import("./pages/admin/LogsPage"));
 
 const queryClient = new QueryClient();
 
@@ -67,6 +68,7 @@ const App = () => (
               <Route path="pedidos" element={<RequestsPage />} />
               <Route path="banco" element={<BancoPage />} />
               <Route path="cineveo" element={<CineveoTester />} />
+              <Route path="logs" element={<LogsPage />} />
               <Route path="avisos" element={<AlertsPage />} />
               <Route path="config" element={<SettingsPage />} />
             </Route>
