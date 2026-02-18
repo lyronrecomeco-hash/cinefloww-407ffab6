@@ -3,6 +3,7 @@ import { useParams, useSearchParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { ArrowLeft, Mic, Subtitles, Video, Globe, ChevronRight, Loader2, AlertTriangle } from "lucide-react";
 import CustomPlayer from "@/components/CustomPlayer";
+import IframeInterceptor from "@/components/IframeInterceptor";
 import { saveWatchProgress, getWatchProgress } from "@/lib/watchProgress";
 
 interface VideoSource {
@@ -11,6 +12,8 @@ interface VideoSource {
   provider: string;
   type: "mp4" | "m3u8";
 }
+
+type Phase = "audio-select" | "loading" | "playing" | "iframe-intercept" | "unavailable";
 
 const AUDIO_OPTIONS = [
   { key: "dublado", icon: Mic, label: "Dublado PT-BR", description: "Áudio em português brasileiro" },
@@ -30,9 +33,10 @@ const WatchPage = () => {
   const episode = searchParams.get("e") ? Number(searchParams.get("e")) : undefined;
 
   const [sources, setSources] = useState<VideoSource[]>([]);
-  const [phase, setPhase] = useState<"audio-select" | "loading" | "playing" | "unavailable">(
+  const [phase, setPhase] = useState<Phase>(
     audioParam ? "loading" : "audio-select"
   );
+  const [iframeProxyUrl, setIframeProxyUrl] = useState<string | null>(null);
   const [selectedAudio, setSelectedAudio] = useState(audioParam || "");
   const [audioTypes, setAudioTypes] = useState<string[]>([]);
   const [showResumePrompt, setShowResumePrompt] = useState(false);
@@ -125,6 +129,12 @@ const WatchPage = () => {
       const { data, error: fnError } = await Promise.race([extractPromise, timeoutPromise]) as any;
 
       if (!fnError && data?.url) {
+        // Check if it's an iframe-proxy (needs client-side interception)
+        if (data.type === "iframe-proxy") {
+          setIframeProxyUrl(data.url);
+          setPhase("iframe-intercept");
+          return;
+        }
         setSources([{
           url: data.url,
           quality: "auto",
@@ -232,7 +242,30 @@ const WatchPage = () => {
     );
   }
 
-  // ===== LOADING =====
+  // ===== IFRAME INTERCEPT (waiting for video source from proxy) =====
+  if (phase === "iframe-intercept" && iframeProxyUrl) {
+    return (
+      <div className="fixed inset-0 z-[100] bg-black">
+        <IframeInterceptor
+          proxyUrl={iframeProxyUrl}
+          onVideoFound={(url, vType) => {
+            setSources([{
+              url,
+              quality: "auto",
+              provider: "playerflix",
+              type: vType,
+            }]);
+            setPhase("playing");
+          }}
+          onError={() => setPhase("unavailable")}
+          onClose={goBack}
+          title={title}
+        />
+      </div>
+    );
+  }
+
+
   if (phase === "loading") {
     return (
       <div className="fixed inset-0 z-[100] bg-black flex items-center justify-center">

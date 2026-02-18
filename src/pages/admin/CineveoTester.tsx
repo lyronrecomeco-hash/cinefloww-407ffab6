@@ -188,7 +188,9 @@ const CineveoTester = () => {
               <XCircle className="w-5 h-5 text-destructive" />
             )}
             <h3 className="font-display font-bold text-lg">
-              {result.url ? "Vídeo Encontrado!" : "Nenhum Vídeo"}
+              {result.url 
+                ? (result.type === "iframe-proxy" ? "Proxy Iframe (Interceptação)" : "Vídeo Encontrado!") 
+                : "Nenhum Vídeo"}
             </h3>
           </div>
 
