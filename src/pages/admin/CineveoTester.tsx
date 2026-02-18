@@ -13,9 +13,9 @@ interface ExtractionResult {
 type ProviderOption = "cineveo" | "megaembed" | "all";
 
 const providerOptions: { value: ProviderOption; label: string; desc: string }[] = [
-  { value: "cineveo", label: "CineFlow", desc: "Apenas CDN CineFlow (mp4 direto)" },
-  { value: "megaembed", label: "MegaEmbed", desc: "Apenas MegaEmbed (m3u8/mp4 bruto)" },
-  { value: "all", label: "Todos", desc: "Tenta CineFlow → MegaEmbed → EmbedPlay" },
+  { value: "cineveo", label: "CDN Prime", desc: "Apenas CDN principal (mp4 direto)" },
+  { value: "megaembed", label: "Fonte B", desc: "Apenas fonte secundária (m3u8/mp4)" },
+  { value: "all", label: "Todos", desc: "Tenta todas as fontes em sequência" },
 ];
 
 const CineveoTester = () => {
@@ -64,7 +64,7 @@ const CineveoTester = () => {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-display font-bold">CineFlow Tester</h1>
+        <h1 className="text-2xl font-display font-bold">Extrator de Vídeo</h1>
         <p className="text-sm text-muted-foreground mt-1">
           Teste a extração de vídeo bruto (MP4/M3U8) por provedor.
         </p>
@@ -199,8 +199,8 @@ const CineveoTester = () => {
             <div className="space-y-3">
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="p-3 rounded-xl bg-white/5 border border-white/10">
-                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Provider</p>
-                  <p className="text-sm font-medium mt-0.5">{result.provider}</p>
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Fonte</p>
+                  <p className="text-sm font-medium mt-0.5">{result.provider === "cineveo" ? "CDN Prime" : result.provider === "megaembed" ? "Fonte B" : result.provider === "embedplay" ? "Fonte C" : result.provider}</p>
                 </div>
                 <div className="p-3 rounded-xl bg-white/5 border border-white/10">
                   <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Tipo</p>

@@ -15,7 +15,7 @@ const menuItems = [
   { label: "Pedidos", path: "/admin/pedidos", icon: MessageSquare, badge: true },
   { label: "Categorias", path: "/admin/categorias", icon: FolderOpen },
   { label: "Banco", path: "/admin/banco", icon: Database },
-  { label: "CineFlow", path: "/admin/cineveo", icon: MonitorPlay },
+  { label: "Extrator", path: "/admin/cineveo", icon: MonitorPlay },
   { label: "Avisos", path: "/admin/avisos", icon: Bell },
   { label: "Configurações", path: "/admin/config", icon: Settings },
 ];

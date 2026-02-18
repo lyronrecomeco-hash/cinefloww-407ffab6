@@ -7,7 +7,7 @@ const corsHeaders = {
 };
 
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
-const TMDB_KEY = "678cf2db5c3ab4a315d8ec632c493c7d";
+const _k = "678cf2db5c3ab4a315d8ec632c493c7d";
 
 // ── Fixed slugify with NFD normalization ─────────────────────────────
 function slugify(text: string): string {
@@ -21,17 +21,16 @@ function slugify(text: string): string {
     .replace(/-+/g, "-");
 }
 
-// ── CineVeo slug discovery via full category API pagination ─────────
-async function findCineveoSlug(
+const _h = atob("aHR0cHM6Ly9jaW5ldmVvLnNpdGU=");
+const _cdn = atob("aHR0cHM6Ly9jZG4uY2luZXZlby5zaXRl");
+
+// ── Primary source slug discovery via category API pagination ────────
+async function findPrimarySlug(
   tmdbId: number,
   type: "movie" | "tv",
 ): Promise<string | null> {
-  const cineveoType = type === "movie" ? "movie" : "tv";
+  const srcType = type === "movie" ? "movie" : "tv";
   const tmdbStr = String(tmdbId);
-  
-  // Paginate sequentially through ALL pages until found or exhausted
-  // CineVeo returns ~20 items per page. We'll check up to 500 pages (10k items).
-  // Use concurrent batches of 5 pages for speed.
   const MAX_PAGES = 500;
   const BATCH = 5;
 
@@ -39,7 +38,7 @@ async function findCineveoSlug(
     const fetches = Array.from({ length: BATCH }, (_, i) => {
       const page = start + i;
       return fetch(
-        `https://cineveo.site/category.php?fetch_mode=1&type=${cineveoType}&page=${page}&genre=`,
+        `${_h}/category.php?fetch_mode=1&type=${srcType}&page=${page}&genre=`,
         { headers: { "User-Agent": UA, Accept: "application/json, */*" } },
       )
         .then(async (res) => {
@@ -60,24 +59,23 @@ async function findCineveoSlug(
     
     for (const r of results) {
       if (r && "slug" in r) {
-        console.log(`[cineveo] Found slug via API page ${r.page}: ${r.slug}`);
+        console.log(`[src-a] Found slug via page ${r.page}: ${r.slug}`);
         return r.slug;
       }
     }
 
-    // If any page returned empty results, we've reached the end of the catalog
     if (results.some((r) => r && "empty" in r)) {
-      console.log(`[cineveo] Reached end of ${cineveoType} catalog at page ~${start}`);
+      console.log(`[src-a] End of ${srcType} catalog at page ~${start}`);
       break;
     }
   }
 
-  console.log(`[cineveo] Slug not found for tmdb_id=${tmdbId} in ${cineveoType} catalog`);
+  console.log(`[src-a] Slug not found for tmdb_id=${tmdbId}`);
   return null;
 }
 
-// ── CineVeo extraction ──────────────────────────────────────────────
-async function tryCineveo(
+// ── Primary source extraction ───────────────────────────────────────
+async function tryPrimarySource(
   tmdbId: number,
   contentType: string,
   season?: number,
@@ -85,49 +83,46 @@ async function tryCineveo(
 ): Promise<{ url: string; type: "mp4" | "m3u8" } | null> {
   const isMovie = contentType === "movie";
   const tmdbType = isMovie ? "movie" : "tv";
-  const tmdbUrl = `https://api.themoviedb.org/3/${tmdbType}/${tmdbId}?api_key=${TMDB_KEY}&language=pt-BR`;
-  console.log(`[cineveo] Fetching TMDB: ${tmdbUrl}`);
+  const tmdbUrl = `https://api.themoviedb.org/3/${tmdbType}/${tmdbId}?api_key=${_k}&language=pt-BR`;
+  console.log(`[src-a] Fetching metadata`);
 
   const tmdbRes = await fetch(tmdbUrl, { headers: { "User-Agent": UA } });
   if (!tmdbRes.ok) {
-    console.log(`[cineveo] TMDB returned ${tmdbRes.status}`);
+    console.log(`[src-a] Metadata returned ${tmdbRes.status}`);
     return null;
   }
   const tmdbData = await tmdbRes.json();
   const title = isMovie ? tmdbData.title : tmdbData.name;
   if (!title) {
-    console.log("[cineveo] No title found from TMDB");
+    console.log("[src-a] No title found");
     return null;
   }
 
   const originalTitle = isMovie ? tmdbData.original_title : tmdbData.original_name;
   const pathType = isMovie ? "filme" : "serie";
 
-  // 1. Build slug candidates from title
   const slugs = [
     `${slugify(title)}-${tmdbId}`,
     ...(originalTitle && originalTitle !== title ? [`${slugify(originalTitle)}-${tmdbId}`] : []),
   ];
 
-  // 2. Try slug-based URLs first
-  const result = await tryCineveoSlugs(slugs, pathType, isMovie, season, episode);
+  const result = await tryPrimarySlugs(slugs, pathType, isMovie, season, episode);
   if (result) return result;
 
-  // 3. Discover correct slug via search + API
-  console.log(`[cineveo] Slug-based attempts failed, trying discovery...`);
-  const discoveredSlug = await findCineveoSlug(tmdbId, tmdbType as "movie" | "tv");
+  console.log(`[src-a] Slug-based attempts failed, trying discovery...`);
+  const discoveredSlug = await findPrimarySlug(tmdbId, tmdbType as "movie" | "tv");
   if (discoveredSlug && !slugs.includes(discoveredSlug)) {
-    console.log(`[cineveo] Trying discovered slug: ${discoveredSlug}`);
-    const apiResult = await tryCineveoSlugs([discoveredSlug], pathType, isMovie, season, episode);
+    console.log(`[src-a] Trying discovered slug: ${discoveredSlug}`);
+    const apiResult = await tryPrimarySlugs([discoveredSlug], pathType, isMovie, season, episode);
     if (apiResult) return apiResult;
   }
 
-  console.log("[cineveo] No video URL found");
+  console.log("[src-a] No video URL found");
   return null;
 }
 
-// ── Try fetching video from cineveo using slug list ──────────────────
-async function tryCineveoSlugs(
+// ── Try fetching video from primary source using slug list ───────────
+async function tryPrimarySlugs(
   slugs: string[],
   pathType: string,
   isMovie: boolean,
@@ -135,56 +130,54 @@ async function tryCineveoSlugs(
   episode?: number,
 ): Promise<{ url: string; type: "mp4" | "m3u8" } | null> {
   for (const slug of slugs) {
-    const pageUrl = `https://cineveo.site/${pathType}/${slug}.html`;
-    console.log(`[cineveo] Trying: ${pageUrl}`);
+    const pageUrl = `${_h}/${pathType}/${slug}.html`;
+    console.log(`[src-a] Trying: ${pageUrl}`);
 
     const pageRes = await fetch(pageUrl, {
-      headers: { "User-Agent": UA, "Referer": "https://cineveo.site/", "Accept": "text/html,*/*" },
+      headers: { "User-Agent": UA, "Referer": `${_h}/`, "Accept": "text/html,*/*" },
       redirect: "follow",
     });
 
     if (!pageRes.ok) {
-      console.log(`[cineveo] Page returned ${pageRes.status}`);
+      console.log(`[src-a] Page returned ${pageRes.status}`);
       continue;
     }
 
     const html = await pageRes.text();
 
     if (html.includes('text-yellow-500">404')) {
-      console.log(`[cineveo] Soft 404 detected`);
+      console.log(`[src-a] Soft 404 detected`);
       continue;
     }
 
-    // For series: look for episode-specific player links
     if (!isMovie && season && episode) {
       const result = await extractSeriesEpisode(html, pageUrl, season, episode);
       if (result) return result;
     }
 
-    // Extract iframe src pointing to the player
     const iframeMatch =
       html.match(/src=["']((?:\.\.)?\/player\/[^"']+)/i) ||
       html.match(/src=["'](\/player\/index\.php[^"']+)/i);
 
     if (!iframeMatch?.[1]) {
-      const cdnDirect = html.match(/(https?:\/\/cdn\.cineveo\.site\/[^\s"'<>\\]+\.mp4)/i);
+      const cdnDirect = html.match(new RegExp(`(${_cdn.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\/[^\\s"'<>\\\\]+\\.mp4)`, 'i'));
       if (cdnDirect?.[1]) {
-        console.log(`[cineveo] Found direct CDN in page: ${cdnDirect[1]}`);
+        console.log(`[src-a] Found direct CDN in page`);
         return { url: cdnDirect[1], type: "mp4" };
       }
-      console.log("[cineveo] No player iframe found");
+      console.log("[src-a] No player iframe found");
       continue;
     }
 
     let playerPath = iframeMatch[1].replace(/^\.\.\//, "/");
-    let playerUrl = `https://cineveo.site${playerPath}`;
+    let playerUrl = `${_h}${playerPath}`;
 
     if (!isMovie && season && episode && !playerPath.includes("s=") && !playerPath.includes("ep=")) {
       const sep = playerPath.includes("?") ? "&" : "?";
       playerUrl += `${sep}s=${season}&e=${episode}`;
     }
 
-    console.log(`[cineveo] Player URL: ${playerUrl}`);
+    console.log(`[src-a] Player URL resolved`);
 
     const playerRes = await fetch(playerUrl, {
       headers: { "User-Agent": UA, "Referer": pageUrl, "Accept": "text/html,*/*" },
@@ -192,22 +185,22 @@ async function tryCineveoSlugs(
     });
 
     if (!playerRes.ok) {
-      console.log(`[cineveo] Player returned ${playerRes.status}`);
+      console.log(`[src-a] Player returned ${playerRes.status}`);
       continue;
     }
 
     const playerHtml = await playerRes.text();
 
-    const cdnMatch = playerHtml.match(/(https?:\/\/cdn\.cineveo\.site\/[^\s"'<>\\]+\.mp4)/i);
+    const cdnMatch = playerHtml.match(new RegExp(`(${_cdn.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\/[^\\s"'<>\\\\]+\\.mp4)`, 'i'));
     if (cdnMatch?.[1]) {
-      console.log(`[cineveo] Found CDN URL: ${cdnMatch[1]}`);
+      console.log(`[src-a] Found CDN URL`);
       return { url: cdnMatch[1], type: "mp4" };
     }
 
     const vodMatch = playerPath.match(/[?&]v=([^&]+)/);
     if (vodMatch?.[1]) {
       const decodedVod = decodeURIComponent(vodMatch[1]);
-      console.log(`[cineveo] Trying VOD URL: ${decodedVod}`);
+      console.log(`[src-a] Trying VOD URL`);
       try {
         const headRes = await fetch(decodedVod, { method: "HEAD", headers: { "User-Agent": UA } });
         if (headRes.ok) return { url: decodedVod, type: "mp4" };
@@ -216,7 +209,7 @@ async function tryCineveoSlugs(
 
     const mp4Match = playerHtml.match(/(https?:\/\/[^\s"'<>\\]+\.mp4)/i);
     if (mp4Match?.[1]) {
-      console.log(`[cineveo] Found generic mp4: ${mp4Match[1]}`);
+      console.log(`[src-a] Found generic mp4`);
       return { url: mp4Match[1], type: "mp4" };
     }
   }
@@ -241,10 +234,10 @@ async function extractSeriesEpisode(
     const match = html.match(pattern);
     if (match?.[1]) {
       let epUrl = match[1];
-      if (epUrl.startsWith("/")) epUrl = `https://cineveo.site${epUrl}`;
+      if (epUrl.startsWith("/")) epUrl = `${_h}${epUrl}`;
       else if (!epUrl.startsWith("http")) epUrl = new URL(epUrl, pageUrl).href;
 
-      console.log(`[cineveo] Found episode link: ${epUrl}`);
+      console.log(`[src-a] Found episode link`);
       const epRes = await fetch(epUrl, {
         headers: { "User-Agent": UA, "Referer": pageUrl },
         redirect: "follow",
@@ -254,34 +247,33 @@ async function extractSeriesEpisode(
 
       const iframeMatch = epHtml.match(/src=["']((?:\.\.)?\/player\/[^"']+)/i);
       if (iframeMatch?.[1]) {
-        let playerUrl = `https://cineveo.site${iframeMatch[1].replace(/^\.\.\//, "/")}`;
+        let playerUrl = `${_h}${iframeMatch[1].replace(/^\.\.\//, "/")}`;
         const playerRes = await fetch(playerUrl, {
           headers: { "User-Agent": UA, "Referer": epUrl },
           redirect: "follow",
         });
         if (playerRes.ok) {
           const playerHtml = await playerRes.text();
-          const cdnMatch = playerHtml.match(/(https?:\/\/cdn\.cineveo\.site\/[^\s"'<>\\]+\.mp4)/i) ||
+          const cdnMatch = playerHtml.match(new RegExp(`(${_cdn.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\/[^\\s"'<>\\\\]+\\.mp4)`, 'i')) ||
                            playerHtml.match(/(https?:\/\/[^\s"'<>\\]+\.mp4)/i);
           if (cdnMatch?.[1]) {
-            console.log(`[cineveo] Found episode CDN: ${cdnMatch[1]}`);
+            console.log(`[src-a] Found episode CDN`);
             return { url: cdnMatch[1], type: "mp4" };
           }
         }
       }
 
-      const cdnDirect = epHtml.match(/(https?:\/\/cdn\.cineveo\.site\/[^\s"'<>\\]+\.mp4)/i);
+      const cdnDirect = epHtml.match(new RegExp(`(${_cdn.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\/[^\\s"'<>\\\\]+\\.mp4)`, 'i'));
       if (cdnDirect?.[1]) return { url: cdnDirect[1], type: "mp4" };
     }
   }
 
-  // Try all iframes with season/episode params
   const allIframes = [...html.matchAll(/src=["']((?:\.\.)?\/player\/[^"']+)/gi)];
   for (const iframe of allIframes) {
     let playerPath = iframe[1].replace(/^\.\.\//, "/");
     const sep = playerPath.includes("?") ? "&" : "?";
-    const playerUrl = `https://cineveo.site${playerPath}${sep}s=${season}&e=${episode}`;
-    console.log(`[cineveo] Trying series player: ${playerUrl}`);
+    const playerUrl = `${_h}${playerPath}${sep}s=${season}&e=${episode}`;
+    console.log(`[src-a] Trying series player`);
 
     try {
       const playerRes = await fetch(playerUrl, {
@@ -291,10 +283,10 @@ async function extractSeriesEpisode(
       if (!playerRes.ok) continue;
       const playerHtml = await playerRes.text();
 
-      const cdnMatch = playerHtml.match(/(https?:\/\/cdn\.cineveo\.site\/[^\s"'<>\\]+\.mp4)/i) ||
+      const cdnMatch = playerHtml.match(new RegExp(`(${_cdn.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\/[^\\s"'<>\\\\]+\\.mp4)`, 'i')) ||
                        playerHtml.match(/(https?:\/\/[^\s"'<>\\]+\.mp4)/i);
       if (cdnMatch?.[1] && !cdnMatch[1].includes("googletagmanager")) {
-        console.log(`[cineveo] Found series CDN via iframe: ${cdnMatch[1]}`);
+        console.log(`[src-a] Found series CDN via iframe`);
         return { url: cdnMatch[1], type: "mp4" };
       }
     } catch { /* skip */ }
@@ -313,7 +305,7 @@ async function tryMegaEmbed(
   const megaUrl = isMovie
     ? `https://megaembed.com/embed/${tmdbId}`
     : `https://megaembed.com/embed/${tmdbId}/${s}/${e}`;
-  console.log(`[extract] Trying MegaEmbed: ${megaUrl}`);
+  console.log(`[src-b] Trying fallback`);
 
   try {
     const megaRes = await fetch(megaUrl, {
@@ -352,7 +344,7 @@ async function tryMegaEmbed(
       }
     }
   } catch (err) {
-    console.log(`[extract] MegaEmbed error: ${err}`);
+    console.log(`[src-b] Error: ${err}`);
   }
   return null;
 }
@@ -369,7 +361,7 @@ async function tryEmbedPlay(
   const embedPageUrl = isMovie
     ? `https://embedplayapi.site/embed/${embedId}`
     : `https://embedplayapi.site/embed/${embedId}/${s}/${e}`;
-  console.log(`[extract] Trying EmbedPlay: ${embedPageUrl}`);
+  console.log(`[src-c] Trying fallback`);
 
   try {
     const pageRes = await fetch(embedPageUrl, {
@@ -430,7 +422,7 @@ async function tryEmbedPlay(
       } catch { /* skip server */ }
     }
   } catch (err) {
-    console.log(`[extract] EmbedPlay error: ${err}`);
+    console.log(`[src-c] Error: ${err}`);
   }
   return null;
 }
@@ -486,7 +478,8 @@ Deno.serve(async (req) => {
       }
     }
 
-    // 2. Try providers
+    // 2. Try providers (internal codenames mapped)
+    const _pMap: Record<string, string> = { "cineveo": "src-a", "megaembed": "src-b", "embedplay": "src-c" };
     let videoUrl: string | null = null;
     let videoType: "mp4" | "m3u8" = "mp4";
     let provider = "cineveo";
@@ -495,9 +488,9 @@ Deno.serve(async (req) => {
 
     if (shouldTry("cineveo") && !videoUrl) {
       try {
-        const cv = await tryCineveo(tmdb_id, cType, season, episode);
+        const cv = await tryPrimarySource(tmdb_id, cType, season, episode);
         if (cv) { videoUrl = cv.url; videoType = cv.type; provider = "cineveo"; }
-      } catch (err) { console.log(`[extract] CineVeo error: ${err}`); }
+      } catch (err) { console.log(`[extract] Provider A error: ${err}`); }
     }
 
     if (shouldTry("megaembed") && !videoUrl) {
@@ -512,7 +505,7 @@ Deno.serve(async (req) => {
 
     // 3. Save to cache & return
     if (videoUrl) {
-      console.log(`[extract] Success! ${videoUrl} (${provider})`);
+      console.log(`[extract] Success via ${_pMap[provider] || provider}`);
       await supabase.from("video_cache").upsert({
         tmdb_id, content_type: cType, audio_type: aType,
         season: season || null, episode: episode || null,
@@ -525,7 +518,7 @@ Deno.serve(async (req) => {
       }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    console.log(`[extract] No direct video URL found (force_provider=${force_provider || "all"})`);
+    console.log(`[extract] No video found (provider=${force_provider || "all"})`);
     return new Response(JSON.stringify({
       url: null,
       provider: "none",
