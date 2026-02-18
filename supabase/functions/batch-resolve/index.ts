@@ -61,6 +61,7 @@ Deno.serve(async (req) => {
             imdb_id: item.imdb_id,
             content_type: item.content_type,
             audio_type: "legendado",
+            title: item.title,
           }),
           signal: controller.signal,
         });
@@ -169,7 +170,7 @@ async function fallbackResolve(supabase: any, supabaseUrl: string, serviceKey: s
       const res = await fetch(`${supabaseUrl}/functions/v1/extract-video`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${serviceKey}` },
-        body: JSON.stringify({ tmdb_id: item.tmdb_id, imdb_id: item.imdb_id, content_type: item.content_type, audio_type: "legendado" }),
+        body: JSON.stringify({ tmdb_id: item.tmdb_id, imdb_id: item.imdb_id, content_type: item.content_type, audio_type: "legendado", title: item.title }),
         signal: controller.signal,
       });
       clearTimeout(timeout);

@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from "react";
 import { useNavigate, useLocation, Outlet } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import {
-  LayoutDashboard, Film, Tv, Sparkles, Drama, FolderOpen,
+  LayoutDashboard, Film, Tv, Sparkles, Drama, FolderOpen, ScrollText,
   Settings, LogOut, Menu, X, ChevronRight, MonitorPlay, Database, MessageSquare, Bell
 } from "lucide-react";
 
@@ -16,6 +16,7 @@ const menuItems = [
   { label: "Categorias", path: "/admin/categorias", icon: FolderOpen },
   { label: "Banco", path: "/admin/banco", icon: Database },
   { label: "Extrator", path: "/admin/cineveo", icon: MonitorPlay },
+  { label: "Logs", path: "/admin/logs", icon: ScrollText },
   { label: "Avisos", path: "/admin/avisos", icon: Bell },
   { label: "Configurações", path: "/admin/config", icon: Settings },
 ];

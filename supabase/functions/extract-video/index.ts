@@ -680,7 +680,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { tmdb_id, imdb_id, content_type, audio_type, season, episode, force_provider } = await req.json();
+    const { tmdb_id, imdb_id, content_type, audio_type, season, episode, force_provider, title: reqTitle } = await req.json();
 
     if (!tmdb_id) {
       return new Response(JSON.stringify({ error: "tmdb_id required" }), {
@@ -762,7 +762,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    // 3. Save to cache & return
+    // 3. Save to cache, log & return
     if (videoUrl) {
       console.log(`[extract] Success via ${_pMap[provider] || provider}`);
       await supabase.from("video_cache").upsert({
@@ -772,10 +772,27 @@ Deno.serve(async (req) => {
         expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
       }, { onConflict: "tmdb_id,content_type,audio_type,season,episode" });
 
+      // Log success
+      const logTitle = reqTitle || `TMDB ${tmdb_id}`;
+      await supabase.from("resolve_logs").insert({
+        tmdb_id, title: logTitle, content_type: cType,
+        season: season || null, episode: episode || null,
+        provider, video_url: videoUrl, video_type: videoType, success: true,
+      });
+
       return new Response(JSON.stringify({
         url: videoUrl, type: videoType, provider, cached: false,
       }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
+
+    // Log failure
+    const logTitle = reqTitle || `TMDB ${tmdb_id}`;
+    await supabase.from("resolve_logs").insert({
+      tmdb_id, title: logTitle, content_type: cType,
+      season: season || null, episode: episode || null,
+      provider: force_provider || "all", success: false,
+      error_message: "Nenhum provedor retornou vídeo",
+    });
 
     console.log(`[extract] No video found (provider=${force_provider || "all"})`);
     return new Response(JSON.stringify({

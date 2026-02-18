@@ -258,6 +258,51 @@ export type Database = {
         }
         Relationships: []
       }
+      resolve_logs: {
+        Row: {
+          content_type: string
+          created_at: string
+          episode: number | null
+          error_message: string | null
+          id: string
+          provider: string | null
+          season: number | null
+          success: boolean
+          title: string
+          tmdb_id: number
+          video_type: string | null
+          video_url: string | null
+        }
+        Insert: {
+          content_type: string
+          created_at?: string
+          episode?: number | null
+          error_message?: string | null
+          id?: string
+          provider?: string | null
+          season?: number | null
+          success?: boolean
+          title: string
+          tmdb_id: number
+          video_type?: string | null
+          video_url?: string | null
+        }
+        Update: {
+          content_type?: string
+          created_at?: string
+          episode?: number | null
+          error_message?: string | null
+          id?: string
+          provider?: string | null
+          season?: number | null
+          success?: boolean
+          title?: string
+          tmdb_id?: number
+          video_type?: string | null
+          video_url?: string | null
+        }
+        Relationships: []
+      }
       site_alerts: {
         Row: {
           active: boolean

@@ -156,6 +156,7 @@ const BancoPage = () => {
           content_type: item.content_type,
           audio_type: "legendado",
           force_provider: forceProvider || undefined,
+          title: item.title,
         },
       });
       const newStatus: VideoStatus = {
@@ -399,6 +400,7 @@ const BancoPage = () => {
                         <button onClick={() => handleProviderSelect(item, "cineveo")} className="w-full text-left px-3 py-1.5 text-[11px] font-medium rounded-lg hover:bg-primary/10 text-foreground">CDN Prime</button>
                         <button onClick={() => handleProviderSelect(item, "megaembed")} className="w-full text-left px-3 py-1.5 text-[11px] font-medium rounded-lg hover:bg-primary/10 text-foreground">Fonte B</button>
                         <button onClick={() => handleProviderSelect(item, "embedplay")} className="w-full text-left px-3 py-1.5 text-[11px] font-medium rounded-lg hover:bg-primary/10 text-foreground">Fonte C</button>
+                        <button onClick={() => handleProviderSelect(item, "playerflix")} className="w-full text-left px-3 py-1.5 text-[11px] font-medium rounded-lg hover:bg-primary/10 text-foreground">Fonte D</button>
                       </div>
                     )}
                     {status?.has_video && (
@@ -479,6 +481,7 @@ const BancoPage = () => {
                                   <button onClick={() => handleProviderSelect(item, "cineveo")} className="w-full text-left px-3 py-1.5 text-[11px] font-medium rounded-lg hover:bg-primary/10 text-foreground">CDN Prime</button>
                                   <button onClick={() => handleProviderSelect(item, "megaembed")} className="w-full text-left px-3 py-1.5 text-[11px] font-medium rounded-lg hover:bg-primary/10 text-foreground">Fonte B</button>
                                   <button onClick={() => handleProviderSelect(item, "embedplay")} className="w-full text-left px-3 py-1.5 text-[11px] font-medium rounded-lg hover:bg-primary/10 text-foreground">Fonte C</button>
+                                  <button onClick={() => handleProviderSelect(item, "playerflix")} className="w-full text-left px-3 py-1.5 text-[11px] font-medium rounded-lg hover:bg-primary/10 text-foreground">Fonte D</button>
                                 </div>
                               )}
                             </div>
