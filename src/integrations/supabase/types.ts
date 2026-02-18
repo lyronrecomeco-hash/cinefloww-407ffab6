@@ -14,6 +14,36 @@ export type Database = {
   }
   public: {
     Tables: {
+      api_access_log: {
+        Row: {
+          accessed_at: string
+          blocked: boolean
+          endpoint: string
+          id: string
+          ip_hash: string | null
+          reason: string | null
+          user_agent: string | null
+        }
+        Insert: {
+          accessed_at?: string
+          blocked?: boolean
+          endpoint: string
+          id?: string
+          ip_hash?: string | null
+          reason?: string | null
+          user_agent?: string | null
+        }
+        Update: {
+          accessed_at?: string
+          blocked?: boolean
+          endpoint?: string
+          id?: string
+          ip_hash?: string | null
+          reason?: string | null
+          user_agent?: string | null
+        }
+        Relationships: []
+      }
       categories: {
         Row: {
           created_at: string
@@ -288,6 +318,39 @@ export type Database = {
         }
         Relationships: []
       }
+      site_visitors: {
+        Row: {
+          hostname: string | null
+          id: string
+          ip_hash: string | null
+          pathname: string | null
+          referrer: string | null
+          user_agent: string | null
+          visited_at: string
+          visitor_id: string
+        }
+        Insert: {
+          hostname?: string | null
+          id?: string
+          ip_hash?: string | null
+          pathname?: string | null
+          referrer?: string | null
+          user_agent?: string | null
+          visited_at?: string
+          visitor_id: string
+        }
+        Update: {
+          hostname?: string | null
+          id?: string
+          ip_hash?: string | null
+          pathname?: string | null
+          referrer?: string | null
+          user_agent?: string | null
+          visited_at?: string
+          visitor_id?: string
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           created_at: string
@@ -342,6 +405,45 @@ export type Database = {
           created_at?: string
           episode?: number | null
           expires_at?: string
+          id?: string
+          provider?: string
+          season?: number | null
+          tmdb_id?: number
+          video_type?: string
+          video_url?: string
+        }
+        Relationships: []
+      }
+      video_cache_backup: {
+        Row: {
+          audio_type: string
+          backed_up_at: string
+          content_type: string
+          episode: number | null
+          id: string
+          provider: string
+          season: number | null
+          tmdb_id: number
+          video_type: string
+          video_url: string
+        }
+        Insert: {
+          audio_type?: string
+          backed_up_at?: string
+          content_type: string
+          episode?: number | null
+          id?: string
+          provider?: string
+          season?: number | null
+          tmdb_id: number
+          video_type?: string
+          video_url: string
+        }
+        Update: {
+          audio_type?: string
+          backed_up_at?: string
+          content_type?: string
+          episode?: number | null
           id?: string
           provider?: string
           season?: number | null

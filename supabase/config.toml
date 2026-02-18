@@ -1,5 +1,8 @@
 project_id = "mfcnkltcdvitxczjwoer"
 
+[functions.api-gateway]
+verify_jwt = false
+
 [functions.proxy-player]
 verify_jwt = false
 
