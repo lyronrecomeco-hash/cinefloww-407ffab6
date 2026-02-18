@@ -27,10 +27,7 @@ const formatTime = (s: number) => {
   return `${m}:${sec.toString().padStart(2, "0")}`;
 };
 
-const DEMO_SOURCES: VideoSource[] = [
-  { url: "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8", quality: "auto", provider: "Demo HLS", type: "m3u8" },
-  { url: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4", quality: "720p", provider: "Demo MP4", type: "mp4" },
-];
+// No demo sources - show branded loading/error instead
 
 const PlayerPage = () => {
   const [searchParams] = useSearchParams();
@@ -129,7 +126,7 @@ const PlayerPage = () => {
   const sources: VideoSource[] = useMemo(() => {
     if (bankSources.length > 0) return bankSources;
     if (videoUrl) return [{ url: videoUrl, quality: "auto", provider: "Stream", type: videoType }];
-    return DEMO_SOURCES;
+    return [];
   }, [bankSources, videoUrl, videoType]);
 
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -484,35 +481,59 @@ const PlayerPage = () => {
         </div>
       )}
 
-      {/* Loading */}
-      {loading && !error && (
-        <div className="absolute inset-0 flex items-center justify-center z-10">
-          <div className="flex flex-col items-center gap-4">
-            <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full border-4 border-primary/30 border-t-primary animate-spin" />
-            <p className="text-white/60 text-sm font-medium">Carregando...</p>
+      {/* Loading - LYNEFLIX branded */}
+      {(loading || bankLoading) && !error && (
+        <div className="absolute inset-0 flex items-center justify-center z-10 bg-black">
+          <div className="flex flex-col items-center gap-6">
+            <div className="lyneflix-loader">
+              <span className="lyneflix-text text-4xl sm:text-5xl font-black tracking-wider select-none">
+                LYNEFLIX
+              </span>
+            </div>
+            <div className="flex gap-1.5">
+              <div className="w-2 h-2 rounded-full bg-primary animate-bounce" style={{ animationDelay: "0ms" }} />
+              <div className="w-2 h-2 rounded-full bg-primary animate-bounce" style={{ animationDelay: "150ms" }} />
+              <div className="w-2 h-2 rounded-full bg-primary animate-bounce" style={{ animationDelay: "300ms" }} />
+            </div>
           </div>
         </div>
       )}
 
-      {/* Error */}
-      {error && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black/90 z-20">
-          <div className="text-center p-6 sm:p-8 max-w-md mx-4">
-            <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-destructive/20 flex items-center justify-center mx-auto mb-4">
-              <AlertTriangle className="w-7 h-7 sm:w-8 sm:h-8 text-destructive" />
+      {/* Error - Friendly modal */}
+      {(error || (!bankLoading && !loading && sources.length === 0)) && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black z-20">
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-[0.03]">
+            <span className="text-[100px] sm:text-[140px] font-black tracking-wider text-white select-none">LYNEFLIX</span>
+          </div>
+          <div className="relative text-center p-6 sm:p-8 max-w-sm mx-4 bg-card/80 backdrop-blur-2xl border border-white/10 rounded-3xl shadow-2xl">
+            <div className="w-14 h-14 rounded-2xl bg-primary/15 flex items-center justify-center mx-auto mb-5">
+              <Settings className="w-7 h-7 text-primary" />
             </div>
-            <h3 className="text-lg sm:text-xl font-bold text-white mb-2">Fonte indisponível</h3>
-            <p className="text-sm text-white/50 mb-1">{source?.provider} — {source?.quality}</p>
-            <p className="text-xs text-white/30 mb-6">{currentSourceIdx + 1} de {sources.length} fontes</p>
-            <div className="flex gap-3 justify-center flex-wrap">
-              <button onClick={() => attachSource(source)} className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white/10 text-white text-sm font-medium hover:bg-white/20 transition-colors">
-                <RefreshCw className="w-4 h-4" /> Tentar novamente
+            <h3 className="text-lg font-bold text-white mb-2">Ops! Tivemos um probleminha</h3>
+            <p className="text-sm text-white/50 mb-6 leading-relaxed">
+              Nossa equipe está mexendo na infraestrutura. Clique abaixo para avisar e daremos prioridade máxima!
+            </p>
+            <div className="flex flex-col gap-3">
+              <button
+                onClick={() => {
+                  const btn = document.getElementById("player-report-btn");
+                  if (btn) { btn.textContent = "✓ Equipe avisada!"; btn.classList.add("bg-green-600"); }
+                }}
+                id="player-report-btn"
+                className="flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-all duration-200"
+              >
+                <AlertTriangle className="w-4 h-4" /> Avisar a equipe
               </button>
-              {currentSourceIdx < sources.length - 1 && (
-                <button onClick={nextSource} className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors">
-                  <ChevronRight className="w-4 h-4" /> Próxima fonte
+              <div className="flex gap-2">
+                {error && source && (
+                  <button onClick={() => attachSource(source)} className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-white/10 text-white text-sm font-medium hover:bg-white/20 transition-colors">
+                    <RefreshCw className="w-4 h-4" /> Tentar de novo
+                  </button>
+                )}
+                <button onClick={goBack} className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-white/5 text-white/70 text-sm font-medium hover:bg-white/10 transition-colors">
+                  <ArrowLeft className="w-4 h-4" /> Voltar
                 </button>
-              )}
+              </div>
             </div>
           </div>
         </div>
