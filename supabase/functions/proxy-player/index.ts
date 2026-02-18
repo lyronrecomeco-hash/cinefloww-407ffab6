@@ -141,6 +141,7 @@ const ANTI_AD_CSS = `
 const ALLOWED_DOMAINS = [
   "embedplayapi.site",
   "embedplay.click",
+  "playerflixapi.com",
   "vidsrc-embed.ru",
   "cloudnestra.com",
   "embed.su",
@@ -192,6 +193,7 @@ Deno.serve(async (req) => {
       "cloudnestra.com": "https://vidsrc-embed.ru/",
       "embedplay.click": "https://embedplayapi.site/",
       "embedplayapi.site": "https://embedplayapi.site/",
+      "playerflixapi.com": "https://playerflixapi.com/",
     };
     const referer = refererMap[hostname] || origin + "/";
 

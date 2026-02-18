@@ -11,12 +11,13 @@ interface ExtractionResult {
   error?: string;
 }
 
-type ProviderOption = "cineveo" | "megaembed" | "embedplay" | "all";
+type ProviderOption = "cineveo" | "megaembed" | "embedplay" | "playerflix" | "all";
 
 const providerOptions: { value: ProviderOption; label: string; desc: string }[] = [
   { value: "cineveo", label: "CDN Prime", desc: "Apenas CDN principal (mp4 direto)" },
   { value: "megaembed", label: "Fonte B", desc: "Apenas fonte secundária (m3u8/mp4)" },
   { value: "embedplay", label: "Fonte C", desc: "EmbedPlay API (m3u8/mp4)" },
+  { value: "playerflix", label: "Fonte D", desc: "PlayerFlix API (m3u8/mp4)" },
   { value: "all", label: "Todos", desc: "Tenta todas as fontes em sequência" },
 ];
 
@@ -202,7 +203,7 @@ const CineveoTester = () => {
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="p-3 rounded-xl bg-white/5 border border-white/10">
                   <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Fonte</p>
-                  <p className="text-sm font-medium mt-0.5">{result.provider === "cineveo" ? "CDN Prime" : result.provider === "megaembed" ? "Fonte B" : result.provider === "embedplay" ? "Fonte C" : result.provider}</p>
+                  <p className="text-sm font-medium mt-0.5">{result.provider === "cineveo" ? "CDN Prime" : result.provider === "megaembed" ? "Fonte B" : result.provider === "embedplay" ? "Fonte C" : result.provider === "playerflix" ? "Fonte D" : result.provider}</p>
                 </div>
                 <div className="p-3 rounded-xl bg-white/5 border border-white/10">
                   <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Tipo</p>

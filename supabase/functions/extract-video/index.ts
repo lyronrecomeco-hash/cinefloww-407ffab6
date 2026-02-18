@@ -526,6 +526,107 @@ function findVideoUrl(html: string): { url: string; type: "mp4" | "m3u8" } | nul
   return null;
 }
 
+// ── PlayerFlix API extraction (playerflixapi.com) ────────────────────
+// This API is iframe-only, so we fetch the embed page and try to extract
+// direct video URLs from the HTML/JS that loads inside.
+async function tryPlayerFlix(
+  tmdbId: number,
+  imdbId: string | null,
+  isMovie: boolean,
+  s: number,
+  e: number,
+): Promise<{ url: string; type: "mp4" | "m3u8" } | null> {
+  const id = imdbId || String(tmdbId);
+  const embedUrl = isMovie
+    ? `https://playerflixapi.com/filme/${id}`
+    : `https://playerflixapi.com/serie/${id}/${s}/${e}`;
+  console.log(`[src-d] Fetching: ${embedUrl}`);
+
+  try {
+    const pageRes = await fetch(embedUrl, {
+      headers: {
+        "User-Agent": UA,
+        "Referer": "https://playerflixapi.com/",
+        "Accept": "text/html,*/*",
+      },
+      redirect: "follow",
+    });
+    if (!pageRes.ok) {
+      console.log(`[src-d] Page returned ${pageRes.status}`);
+      return null;
+    }
+
+    const html = await pageRes.text();
+
+    // 1. Try direct video URLs in the page
+    const directVideo = findVideoUrl(html);
+    if (directVideo) {
+      console.log(`[src-d] Found video directly in page`);
+      return directVideo;
+    }
+
+    // 2. Look for nested iframes and follow them
+    const iframeMatches = [...html.matchAll(/src=["'](https?:\/\/[^"']+)["']/gi)];
+    for (const [, iframeSrc] of iframeMatches) {
+      if (iframeSrc.includes("playerflixapi.com") && iframeSrc !== embedUrl) continue; // skip self
+      if (iframeSrc.includes("googletagmanager") || iframeSrc.includes("google.com") || iframeSrc.includes("facebook")) continue;
+      
+      console.log(`[src-d] Following iframe: ${iframeSrc.substring(0, 80)}`);
+      try {
+        const iframeRes = await fetch(iframeSrc, {
+          headers: { "User-Agent": UA, "Referer": embedUrl },
+          redirect: "follow",
+        });
+        if (!iframeRes.ok) continue;
+        const iframeHtml = await iframeRes.text();
+        
+        const iframeVideo = findVideoUrl(iframeHtml);
+        if (iframeVideo) {
+          console.log(`[src-d] Found video in nested iframe`);
+          return iframeVideo;
+        }
+
+        // Follow deeper iframes (one more level)
+        const deepIframes = [...iframeHtml.matchAll(/src=["'](https?:\/\/[^"']+)["']/gi)];
+        for (const [, deepSrc] of deepIframes) {
+          if (deepSrc.includes("googletagmanager") || deepSrc.includes("google.com")) continue;
+          if (deepSrc.includes(".m3u8") || deepSrc.includes(".mp4")) {
+            console.log(`[src-d] Found direct link in deep iframe src`);
+            return { url: deepSrc, type: deepSrc.includes(".mp4") ? "mp4" : "m3u8" };
+          }
+          try {
+            const deepRes = await fetch(deepSrc, {
+              headers: { "User-Agent": UA, "Referer": iframeSrc },
+              redirect: "follow",
+            });
+            if (!deepRes.ok) continue;
+            const deepHtml = await deepRes.text();
+            const deepVideo = findVideoUrl(deepHtml);
+            if (deepVideo) {
+              console.log(`[src-d] Found video in deep iframe`);
+              return deepVideo;
+            }
+          } catch { /* skip */ }
+        }
+      } catch { /* skip */ }
+    }
+
+    // 3. Look for API/AJAX endpoints in the page
+    const apiMatches = [...html.matchAll(/(?:url|endpoint|api)\s*[:=]\s*["'](https?:\/\/[^"']+)["']/gi)];
+    for (const [, apiUrl] of apiMatches) {
+      if (apiUrl.includes(".m3u8") || apiUrl.includes(".mp4")) {
+        console.log(`[src-d] Found video URL in API reference`);
+        return { url: apiUrl, type: apiUrl.includes(".mp4") ? "mp4" : "m3u8" };
+      }
+    }
+
+    console.log(`[src-d] No extractable video found`);
+  } catch (err) {
+    console.log(`[src-d] Error: ${err}`);
+  }
+  return null;
+}
+
 // ── Main handler ─────────────────────────────────────────────────────
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -578,7 +679,7 @@ Deno.serve(async (req) => {
     }
 
     // 2. Try providers (internal codenames mapped)
-    const _pMap: Record<string, string> = { "cineveo": "src-a", "megaembed": "src-b", "embedplay": "src-c" };
+    const _pMap: Record<string, string> = { "cineveo": "src-a", "megaembed": "src-b", "embedplay": "src-c", "playerflix": "src-d" };
     let videoUrl: string | null = null;
     let videoType: "mp4" | "m3u8" = "mp4";
     let provider = "cineveo";
@@ -600,6 +701,11 @@ Deno.serve(async (req) => {
     if (shouldTry("embedplay") && !videoUrl) {
       const ep = await tryEmbedPlay(tmdb_id, imdb_id || null, isMovie, s, e);
       if (ep) { videoUrl = ep.url; videoType = ep.type; provider = "embedplay"; }
+    }
+
+    if (shouldTry("playerflix") && !videoUrl) {
+      const pf = await tryPlayerFlix(tmdb_id, imdb_id || null, isMovie, s, e);
+      if (pf) { videoUrl = pf.url; videoType = pf.type; provider = "playerflix"; }
     }
 
     // 3. Save to cache & return
