@@ -27,7 +27,7 @@ const ContentManager = ({ contentType, title }: ContentManagerProps) => {
   const [importProgress, setImportProgress] = useState("");
   const [importedCount, setImportedCount] = useState(0);
   const [totalToImport, setTotalToImport] = useState(0);
-  const [cineveoTotalPages, setCineveoTotalPages] = useState(0);
+  const [catalogTotalPages, setCatalogTotalPages] = useState(0);
   const [syncStats, setSyncStats] = useState<any>(null);
   const [loadingSyncStats, setLoadingSyncStats] = useState(false);
   const [loadingPages, setLoadingPages] = useState(false);
@@ -71,7 +71,7 @@ const ContentManager = ({ contentType, title }: ContentManagerProps) => {
       });
       if (!error && data?.success) {
         setSyncStats(data);
-        setCineveoTotalPages(data.total_pages);
+        setCatalogTotalPages(data.total_pages);
       }
     } catch { /* skip */ }
     setLoadingSyncStats(false);
@@ -142,11 +142,11 @@ const ContentManager = ({ contentType, title }: ContentManagerProps) => {
   };
 
   const handleAutoImport = async (enrich: boolean) => {
-    if (!cineveoTotalPages) {
+    if (!catalogTotalPages) {
       toast({ title: "Aguarde", description: "Carregando total de páginas..." });
       return;
     }
-    handleImport(1, cineveoTotalPages, enrich);
+    handleImport(1, catalogTotalPages, enrich);
   };
 
   const handleCancelImport = () => { cancelRef.current = true; };
@@ -304,7 +304,7 @@ const ContentManager = ({ contentType, title }: ContentManagerProps) => {
         <ImportModal
           contentType={contentType}
           title={title}
-          totalPages={cineveoTotalPages}
+          totalPages={catalogTotalPages}
           syncStats={syncStats}
           loadingSyncStats={loadingSyncStats}
           onRefreshSync={fetchSyncStats}
