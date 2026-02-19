@@ -10,7 +10,6 @@ import {
   RefreshCw, ArrowLeft, PictureInPicture,
 } from "lucide-react";
 import { saveWatchProgress, getWatchProgress } from "@/lib/watchProgress";
-import { secureVideoUrl } from "@/lib/videoUrl";
 import { getSeasonDetails } from "@/services/tmdb";
 
 interface VideoSource {
@@ -103,9 +102,8 @@ const PlayerPage = () => {
 
       const data = extractResult.data;
       if (data?.url) {
-        const signedUrl = await secureVideoUrl(data.url);
         setBankSources([{
-          url: signedUrl,
+          url: data.url,
           quality: "auto",
           provider: data.provider || "cache",
           type: data.type === "mp4" ? "mp4" : "m3u8",

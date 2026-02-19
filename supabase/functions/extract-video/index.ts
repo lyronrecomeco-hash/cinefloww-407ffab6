@@ -794,6 +794,93 @@ async function tryCineveoEmbed(
   }
 }
 
+// ── Fonte F (SuperFlix API) ──────────────────────────────────────────
+async function trySuperFlix(
+  tmdbId: number, imdbId: string | null, isMovie: boolean,
+  season: number, episode: number
+): Promise<{ url: string; type: "mp4" | "m3u8" } | null> {
+  try {
+    const sfBase = "https://superflixapi.help";
+    let embedUrl: string;
+    
+    if (isMovie) {
+      // Try IMDB first, then TMDB
+      const id = imdbId || String(tmdbId);
+      embedUrl = `${sfBase}/filme/${id}`;
+    } else {
+      embedUrl = `${sfBase}/serie/${tmdbId}/${season}/${episode}`;
+    }
+
+    console.log(`[src-f] Trying SuperFlix: ${embedUrl}`);
+
+    const res = await fetchWithTimeout(embedUrl, {
+      timeout: 8000,
+      headers: { 
+        "User-Agent": UA, 
+        "Referer": sfBase,
+        "Accept": "text/html,application/xhtml+xml",
+      },
+      redirect: "follow",
+    });
+
+    if (!res.ok) {
+      console.log(`[src-f] HTTP ${res.status}`);
+      return null;
+    }
+
+    const html = await res.text();
+    
+    // 1. Try finding direct video URL in the page
+    const directVideo = findVideoUrl(html);
+    if (directVideo) {
+      console.log(`[src-f] Found direct video`);
+      return directVideo;
+    }
+
+    // 2. Look for iframe sources and extract from them
+    const iframeMatches = html.matchAll(/<iframe[^>]+src=["']([^"']+)["']/gi);
+    for (const match of iframeMatches) {
+      let iframeSrc = match[1];
+      if (iframeSrc.startsWith("//")) iframeSrc = "https:" + iframeSrc;
+      if (!iframeSrc.startsWith("http")) continue;
+      // Skip self-referencing iframes
+      if (iframeSrc.includes("superflixapi.help")) continue;
+      
+      console.log(`[src-f] Following iframe: ${iframeSrc.substring(0, 80)}`);
+      
+      try {
+        const iframeRes = await fetchWithTimeout(iframeSrc, {
+          timeout: 5000,
+          headers: { "User-Agent": UA, "Referer": embedUrl },
+          redirect: "follow",
+        });
+        if (iframeRes.ok) {
+          const iframeHtml = await iframeRes.text();
+          const iframeVideo = findVideoUrl(iframeHtml);
+          if (iframeVideo) {
+            console.log(`[src-f] Found video in iframe`);
+            return iframeVideo;
+          }
+          
+          // Deep extract - look for nested iframes
+          const deep = await deepExtractFromIframe(iframeSrc, embedUrl, 0);
+          if (deep) {
+            console.log(`[src-f] Found video via deep extract`);
+            return deep;
+          }
+        }
+      } catch {}
+    }
+
+    // 3. Fallback: use SuperFlix as iframe-proxy (the page itself is a player)
+    console.log(`[src-f] No direct video found, returning iframe-proxy`);
+    return fallbackToIframeProxy(embedUrl, "src-f") as any;
+  } catch (err) {
+    console.log(`[src-f] Error: ${err}`);
+    return null;
+  }
+}
+
 function fallbackToIframeProxy(embedUrl: string, tag: string): { url: string; type: "iframe-proxy" } {
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
   const proxyUrl = `${supabaseUrl}/functions/v1/proxy-player?url=${encodeURIComponent(embedUrl)}`;
@@ -866,9 +953,9 @@ Deno.serve(async (req) => {
       }
     }
 
-    // 2. Try providers - PRIORITY ORDER: E (fastest) → A → B → C → D
+    // 2. Try providers - PRIORITY ORDER: E (fastest) → A → B → C → D → F (SuperFlix)
     // Each provider has a hard timeout to fail-fast
-    const _pMap: Record<string, string> = { "cineveo": "src-a", "cineveo-embed": "src-e", "megaembed": "src-b", "embedplay": "src-c", "playerflix": "src-d" };
+    const _pMap: Record<string, string> = { "cineveo": "src-a", "cineveo-embed": "src-e", "megaembed": "src-b", "embedplay": "src-c", "playerflix": "src-d", "superflix": "src-f" };
     let videoUrl: string | null = null;
     let videoType: "mp4" | "m3u8" = "mp4";
     let provider = "cineveo-embed";
@@ -932,6 +1019,20 @@ Deno.serve(async (req) => {
           videoUrl = pf.url; videoType = pf.type; provider = "playerflix";
         }
       } catch (err) { console.log(`[extract] Provider D error: ${err}`); }
+    }
+
+    // ── Fonte F (SuperFlix) - 8s timeout ──
+    if (shouldTry("superflix") && !videoUrl) {
+      try {
+        const sf = await withTimeout(trySuperFlix(tmdb_id, imdb_id || null, isMovie, s, e), 8000, "src-f");
+        if (sf) {
+          if ((sf.type as string) === "iframe-proxy") {
+            // Store as last resort but keep trying
+          } else {
+            videoUrl = sf.url; videoType = sf.type; provider = "superflix";
+          }
+        }
+      } catch (err) { console.log(`[extract] Provider F error: ${err}`); }
     }
 
     // ── Last resort: return iframe-proxy from Fonte E if we have nothing ──

@@ -6,7 +6,6 @@ import CustomPlayer from "@/components/CustomPlayer";
 import LyneflixIntro from "@/components/LyneflixIntro";
 import IframeInterceptor from "@/components/IframeInterceptor";
 import { saveWatchProgress, getWatchProgress } from "@/lib/watchProgress";
-import { secureVideoUrl } from "@/lib/videoUrl";
 
 interface VideoSource {
   url: string;
@@ -46,15 +45,13 @@ const WatchPage = () => {
   // Handle prefetched source async
   useEffect(() => {
     if (prefetched?.url && sources.length === 0) {
-      secureVideoUrl(prefetched.url).then((signedUrl) => {
-        setSources([{
-          url: signedUrl,
-          quality: "auto",
-          provider: prefetched.provider || "banco",
-          type: (prefetched.type === "mp4" ? "mp4" : "m3u8") as "mp4" | "m3u8",
-        }]);
-        setPhase("playing");
-      });
+      setSources([{
+        url: prefetched.url,
+        quality: "auto",
+        provider: prefetched.provider || "banco",
+        type: (prefetched.type === "mp4" ? "mp4" : "m3u8") as "mp4" | "m3u8",
+      }]);
+      setPhase("playing");
     }
   }, []);
   const [iframeProxyUrl, setIframeProxyUrl] = useState<string | null>(null);
@@ -142,7 +139,7 @@ const WatchPage = () => {
           return;
         }
         setSources([{
-          url: await secureVideoUrl(data.url),
+          url: data.url,
           quality: "auto",
           provider: data.provider || "banco",
           type: data.type === "mp4" ? "mp4" : "m3u8",
@@ -257,7 +254,7 @@ const WatchPage = () => {
           proxyUrl={iframeProxyUrl}
           onVideoFound={async (url, vType) => {
             setSources([{
-              url: await secureVideoUrl(url),
+              url,
               quality: "auto",
               provider: "playerflix",
               type: vType,

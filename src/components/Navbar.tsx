@@ -9,6 +9,7 @@ const navItems = [
   { label: "Início", path: "/" },
   { label: "Filmes", path: "/filmes" },
   { label: "Séries", path: "/series" },
+  { label: "Doramas", path: "/doramas" },
   { label: "Lançamentos", path: "/lancamentos" },
 ];
 

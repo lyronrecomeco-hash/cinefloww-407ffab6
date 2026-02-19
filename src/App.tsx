@@ -11,7 +11,7 @@ import Index from "./pages/Index";
 const DetailsPage = lazy(() => import("./pages/DetailsPage"));
 const MoviesPage = lazy(() => import("./pages/MoviesPage"));
 const SeriesPage = lazy(() => import("./pages/SeriesPage"));
-// TV Lyne removed
+const DoramasPage = lazy(() => import("./pages/DoramasPage"));
 const ReleasesPage = lazy(() => import("./pages/ReleasesPage"));
 const PlayerPage = lazy(() => import("./pages/PlayerPage"));
 const ApiRedirect = lazy(() => import("./pages/ApiRedirect"));
@@ -68,7 +68,7 @@ const App = () => (
             <Route path="/" element={<Index />} />
             <Route path="/filmes" element={<MoviesPage />} />
             <Route path="/series" element={<SeriesPage />} />
-            
+            <Route path="/doramas" element={<DoramasPage />} />
             <Route path="/lancamentos" element={<ReleasesPage />} />
             <Route path="/filme/:id" element={<DetailsPage type="movie" />} />
             <Route path="/serie/:id" element={<DetailsPage type="tv" />} />
