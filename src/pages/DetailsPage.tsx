@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
+
 import { toast } from "sonner";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
@@ -15,6 +16,7 @@ import RequestModal from "@/components/RequestModal";
 import ReportModal from "@/components/ReportModal";
 import DetailAutoWarning from "@/components/DetailAutoWarning";
 import LoginRequiredModal from "@/components/LoginRequiredModal";
+import WatchTogetherButton from "@/components/watch-together/WatchTogetherButton";
 import { fromSlug } from "@/lib/slugify";
 import { toSlug } from "@/lib/slugify";
 import {
@@ -46,6 +48,15 @@ const DetailsPage = ({ type }: DetailsPageProps) => {
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [inMyList, setInMyList] = useState(false);
   const [hasVideo, setHasVideo] = useState<boolean | null>(null); // null = loading
+  const [activeProfileId, setActiveProfileId] = useState<string | null>(null);
+
+  // Load active profile
+  useEffect(() => {
+    const stored = localStorage.getItem("lyneflix_active_profile");
+    if (stored) {
+      try { setActiveProfileId(JSON.parse(stored).id); } catch {}
+    }
+  }, []);
 
   useEffect(() => {
     if (detail) {
@@ -352,6 +363,16 @@ const DetailsPage = ({ type }: DetailsPageProps) => {
                 <Flag className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                 Reportar
               </button>
+              <WatchTogetherButton
+                profileId={activeProfileId}
+                tmdbId={detail.id}
+                contentType={type}
+                title={getDisplayTitle(detail)}
+                posterPath={detail.poster_path || undefined}
+                onRoomJoined={(code) => {
+                  toast.success(`Sala ${code} — recurso em fase de testes!`);
+                }}
+              />
             </div>
 
             {/* Cast - Netflix style */}

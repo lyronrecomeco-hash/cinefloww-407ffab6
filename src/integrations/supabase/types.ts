@@ -914,6 +914,146 @@ export type Database = {
         }
         Relationships: []
       }
+      watch_room_messages: {
+        Row: {
+          created_at: string
+          id: string
+          message: string
+          profile_id: string
+          room_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          message: string
+          profile_id: string
+          room_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          message?: string
+          profile_id?: string
+          room_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "watch_room_messages_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "watch_room_messages_room_id_fkey"
+            columns: ["room_id"]
+            isOneToOne: false
+            referencedRelation: "watch_rooms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      watch_room_participants: {
+        Row: {
+          id: string
+          joined_at: string
+          last_heartbeat: string
+          profile_id: string
+          role: string
+          room_id: string
+        }
+        Insert: {
+          id?: string
+          joined_at?: string
+          last_heartbeat?: string
+          profile_id: string
+          role?: string
+          room_id: string
+        }
+        Update: {
+          id?: string
+          joined_at?: string
+          last_heartbeat?: string
+          profile_id?: string
+          role?: string
+          room_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "watch_room_participants_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "watch_room_participants_room_id_fkey"
+            columns: ["room_id"]
+            isOneToOne: false
+            referencedRelation: "watch_rooms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      watch_rooms: {
+        Row: {
+          content_type: string
+          created_at: string
+          episode: number | null
+          expires_at: string
+          host_profile_id: string
+          id: string
+          max_participants: number
+          poster_path: string | null
+          room_code: string
+          season: number | null
+          status: string
+          title: string
+          tmdb_id: number
+          updated_at: string
+        }
+        Insert: {
+          content_type?: string
+          created_at?: string
+          episode?: number | null
+          expires_at?: string
+          host_profile_id: string
+          id?: string
+          max_participants?: number
+          poster_path?: string | null
+          room_code: string
+          season?: number | null
+          status?: string
+          title?: string
+          tmdb_id: number
+          updated_at?: string
+        }
+        Update: {
+          content_type?: string
+          created_at?: string
+          episode?: number | null
+          expires_at?: string
+          host_profile_id?: string
+          id?: string
+          max_participants?: number
+          poster_path?: string | null
+          room_code?: string
+          season?: number | null
+          status?: string
+          title?: string
+          tmdb_id?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "watch_rooms_host_profile_id_fkey"
+            columns: ["host_profile_id"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       video_cache_safe: {
