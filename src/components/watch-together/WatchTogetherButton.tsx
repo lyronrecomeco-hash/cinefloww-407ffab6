@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Users } from "lucide-react";
 import CreateRoomModal from "./CreateRoomModal";
 import JoinRoomModal from "./JoinRoomModal";
+import LoginRequiredModal from "@/components/LoginRequiredModal";
 
 interface WatchTogetherButtonProps {
   profileId: string | null;
@@ -20,14 +21,21 @@ const WatchTogetherButton = ({
   const [showCreate, setShowCreate] = useState(false);
   const [showJoin, setShowJoin] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
+  const [showLoginModal, setShowLoginModal] = useState(false);
 
-  if (!profileId) return null;
+  const handleMenuToggle = () => {
+    if (!profileId) {
+      setShowLoginModal(true);
+      return;
+    }
+    setShowMenu(!showMenu);
+  };
 
   return (
     <>
       <div className="relative">
         <button
-          onClick={() => setShowMenu(!showMenu)}
+          onClick={handleMenuToggle}
           className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white/10 backdrop-blur-sm border border-white/10 text-white text-sm font-medium hover:bg-white/20 hover:border-primary/30 transition-all duration-200 group"
         >
           <Users className="w-4 h-4 text-primary group-hover:scale-110 transition-transform" />
@@ -67,7 +75,7 @@ const WatchTogetherButton = ({
         )}
       </div>
 
-      {showCreate && (
+      {showCreate && profileId && (
         <CreateRoomModal
           profileId={profileId}
           tmdbId={tmdbId}
@@ -81,13 +89,15 @@ const WatchTogetherButton = ({
         />
       )}
 
-      {showJoin && (
+      {showJoin && profileId && (
         <JoinRoomModal
           profileId={profileId}
           onClose={() => setShowJoin(false)}
           onJoined={(code) => { setShowJoin(false); onRoomJoined(code); }}
         />
       )}
+
+      {showLoginModal && <LoginRequiredModal onClose={() => setShowLoginModal(false)} />}
     </>
   );
 };
