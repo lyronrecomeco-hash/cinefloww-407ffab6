@@ -34,7 +34,9 @@ const ContentManager = ({ contentType, title }: ContentManagerProps) => {
   const [editItem, setEditItem] = useState<any | null>(null);
   const [page, setPage] = useState(0);
   const [filterText, setFilterText] = useState("");
+  const [autoImportStatus, setAutoImportStatus] = useState<string | null>(null);
   const cancelRef = useRef(false);
+  const autoImportRanRef = useRef(false);
   const { toast } = useToast();
 
   const fetchContent = useCallback(async () => {
@@ -59,9 +61,53 @@ const ContentManager = ({ contentType, title }: ContentManagerProps) => {
       setTotalCount(count || 0);
     }
     setLoading(false);
+    return count || 0;
   }, [contentType, page, filterText]);
 
   useEffect(() => { fetchContent(); }, [fetchContent]);
+
+  // ── Auto-import for doramas: runs once on mount if catalog is empty ──
+  useEffect(() => {
+    if (contentType !== "dorama" || autoImportRanRef.current) return;
+    autoImportRanRef.current = true;
+
+    const autoImport = async () => {
+      // Check if we already have doramas
+      const { count } = await supabase
+        .from("content")
+        .select("id", { count: "exact", head: true })
+        .eq("content_type", "dorama");
+
+      if ((count || 0) > 50) return; // Already populated, skip
+
+      setAutoImportStatus("🔄 Importando doramas automaticamente...");
+      cancelRef.current = false;
+      let totalImported = 0;
+      const MAX_PAGES = 20; // Import first 20 pages (~400 doramas)
+
+      try {
+        for (let startPage = 1; startPage <= MAX_PAGES && !cancelRef.current; startPage += 10) {
+          setAutoImportStatus(`🔄 Importando páginas ${startPage}-${startPage + 9}...`);
+          const { data, error } = await supabase.functions.invoke("import-catalog", {
+            body: { action: "import", content_type: "dorama", start_page: startPage, enrich: false },
+          });
+          if (!error && data?.success) {
+            totalImported += data.imported || 0;
+            setAutoImportStatus(`🔄 ${totalImported} doramas importados...`);
+            if (!data.has_more) break;
+          } else break;
+        }
+        setAutoImportStatus(`✅ ${totalImported} doramas importados!`);
+        fetchContent();
+        setTimeout(() => setAutoImportStatus(null), 4000);
+      } catch {
+        setAutoImportStatus(`⚠️ Erro na importação. ${totalImported} importados.`);
+        if (totalImported > 0) fetchContent();
+      }
+    };
+
+    autoImport();
+  }, [contentType]);
 
   const fetchSyncStats = useCallback(async () => {
     setLoadingSyncStats(true);
@@ -183,6 +229,12 @@ const ContentManager = ({ contentType, title }: ContentManagerProps) => {
           </button>
         </div>
       </div>
+      {/* Auto-import status for doramas */}
+      {autoImportStatus && (
+        <div className="px-4 py-3 rounded-xl bg-primary/10 border border-primary/20 text-sm text-primary font-medium animate-pulse">
+          {autoImportStatus}
+        </div>
+      )}
 
       {/* Filter */}
       <div className="relative">
