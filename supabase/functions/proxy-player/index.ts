@@ -142,6 +142,7 @@ const ALLOWED_DOMAINS = [
   "embedplayapi.site",
   "embedplay.click",
   "playerflixapi.com",
+  "primevicio.lat",
   "vidsrc-embed.ru",
   "cloudnestra.com",
   "embed.su",

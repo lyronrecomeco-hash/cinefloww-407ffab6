@@ -132,11 +132,11 @@ const AdminLayout = () => {
       <div className="p-5 border-b border-white/10">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-lg bg-primary/20 flex items-center justify-center flex-shrink-0">
-            <span className="text-primary font-display font-bold text-lg">C</span>
+            <span className="text-primary font-display font-bold text-lg">L</span>
           </div>
           {sidebarOpen && (
             <span className="font-display font-bold text-lg tracking-tight">
-              Cine<span className="text-gradient">Flow</span>
+              Lyne<span className="text-gradient">Flix</span>
             </span>
           )}
         </div>

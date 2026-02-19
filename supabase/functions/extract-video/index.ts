@@ -693,18 +693,18 @@ async function deepExtractFromIframe(
   return null;
 }
 
-// ── Cineveo Embed API extraction ─────────────────────────────────────
+// ── Cineveo Embed API extraction (primevicio.lat) ────────────────────
 async function tryCineveoEmbed(
   tmdbId: number,
   isMovie: boolean,
   s: number,
   e: number,
-): Promise<{ url: string; type: "mp4" | "m3u8" } | null> {
+): Promise<{ url: string; type: "mp4" | "m3u8" | "iframe-proxy" } | null> {
   const embedBase = "http://primevicio.lat";
   const embedUrl = isMovie
     ? `${embedBase}/embed/movie/${tmdbId}`
     : `${embedBase}/embed/tv/${tmdbId}/${s}/${e}`;
-  console.log(`[src-e] Trying Cineveo Embed API: ${embedUrl}`);
+  console.log(`[src-e] Trying Primevício Embed: ${embedUrl}`);
 
   try {
     const res = await fetch(embedUrl, {
@@ -712,34 +712,40 @@ async function tryCineveoEmbed(
         "User-Agent": UA,
         "Referer": embedBase + "/",
         "Accept": "text/html,*/*",
+        "Sec-Fetch-Dest": "iframe",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "cross-site",
       },
       redirect: "follow",
     });
     if (!res.ok) {
       console.log(`[src-e] HTTP ${res.status}`);
-      return null;
+      // Fallback to iframe-proxy even on HTTP error
+      return fallbackToIframeProxy(embedUrl, "src-e");
     }
 
     const html = await res.text();
 
-    // Try to find video URL in the embed page
+    // 1. Try direct video extraction
     const video = findVideoUrl(html);
     if (video) {
       console.log(`[src-e] Found video directly in embed`);
       return video;
     }
 
-    // Try to find iframe src and follow it
+    // 2. Try nested iframes
     const iframeMatch = html.match(/<iframe[^>]+src=["']([^"']+)/i);
     if (iframeMatch?.[1]) {
       const iframeSrc = iframeMatch[1].startsWith("http")
         ? iframeMatch[1]
-        : `${embedBase}${iframeMatch[1]}`;
+        : iframeMatch[1].startsWith("//")
+          ? "https:" + iframeMatch[1]
+          : `${embedBase}${iframeMatch[1]}`;
       console.log(`[src-e] Following iframe: ${iframeSrc.substring(0, 80)}`);
 
       try {
         const iframeRes = await fetch(iframeSrc, {
-          headers: { "User-Agent": UA, "Referer": embedUrl },
+          headers: { "User-Agent": UA, "Referer": embedUrl, "Sec-Fetch-Dest": "iframe" },
           redirect: "follow",
         });
         if (iframeRes.ok) {
@@ -750,30 +756,17 @@ async function tryCineveoEmbed(
             return iframeVideo;
           }
 
-          // Deep: look for another iframe inside
-          const deepMatch = iframeHtml.match(/<iframe[^>]+src=["']([^"']+)/i);
-          if (deepMatch?.[1]) {
-            const deepSrc = deepMatch[1].startsWith("http") ? deepMatch[1] : new URL(deepMatch[1], iframeSrc).href;
-            try {
-              const deepRes = await fetch(deepSrc, {
-                headers: { "User-Agent": UA, "Referer": iframeSrc },
-                redirect: "follow",
-              });
-              if (deepRes.ok) {
-                const deepHtml = await deepRes.text();
-                const deepVideo = findVideoUrl(deepHtml);
-                if (deepVideo) {
-                  console.log(`[src-e] Found video in deep iframe`);
-                  return deepVideo;
-                }
-              }
-            } catch {}
+          // Deep iframe
+          const deepResult = await deepExtractFromIframe(iframeSrc, embedUrl, 0);
+          if (deepResult) {
+            console.log(`[src-e] Found video in deep iframe`);
+            return deepResult;
           }
         }
       } catch {}
     }
 
-    // Also try the JSON feed API for metadata
+    // 3. Try JSON feed API
     try {
       const feedRes = await fetch(`${embedBase}/api/feed_externo.php?id=${tmdbId}`, {
         headers: { "User-Agent": UA },
@@ -788,11 +781,20 @@ async function tryCineveoEmbed(
       }
     } catch {}
 
-    console.log(`[src-e] No video found in embed`);
+    // 4. Fallback: iframe-proxy (embed plays in iframe with interceptor)
+    console.log(`[src-e] No direct video, falling back to iframe-proxy`);
+    return fallbackToIframeProxy(embedUrl, "src-e");
   } catch (err) {
     console.log(`[src-e] Error: ${err}`);
+    return fallbackToIframeProxy(embedUrl, "src-e");
   }
-  return null;
+}
+
+function fallbackToIframeProxy(embedUrl: string, tag: string): { url: string; type: "iframe-proxy" } {
+  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+  const proxyUrl = `${supabaseUrl}/functions/v1/proxy-player?url=${encodeURIComponent(embedUrl)}`;
+  console.log(`[${tag}] Using iframe-proxy fallback`);
+  return { url: proxyUrl, type: "iframe-proxy" as any };
 }
 
 // ── Main handler ─────────────────────────────────────────────────────
@@ -865,7 +867,14 @@ Deno.serve(async (req) => {
     if (shouldTry("cineveo-embed") && !videoUrl) {
       try {
         const ce = await tryCineveoEmbed(tmdb_id, isMovie, s, e);
-        if (ce) { videoUrl = ce.url; videoType = ce.type; provider = "cineveo-embed"; }
+        if (ce) {
+          if ((ce.type as string) === "iframe-proxy") {
+            return new Response(JSON.stringify({
+              url: ce.url, type: "iframe-proxy", provider: "cineveo-embed", cached: false,
+            }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+          }
+          videoUrl = ce.url; videoType = ce.type as "mp4" | "m3u8"; provider = "cineveo-embed";
+        }
       } catch (err) { console.log(`[extract] Provider E error: ${err}`); }
     }
 

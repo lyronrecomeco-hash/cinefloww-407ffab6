@@ -211,17 +211,7 @@
   animation: lyneflix-spin 0.8s linear infinite;
 }
 
-/* Increase base font size */
+/* Base font size — standard 16px */
 html {
   font-size: 16px;
-}
-@media (min-width: 640px) {
-  html {
-    font-size: 17px;
-  }
-}
-@media (min-width: 1024px) {
-  html {
-    font-size: 18px;
-  }
 }
