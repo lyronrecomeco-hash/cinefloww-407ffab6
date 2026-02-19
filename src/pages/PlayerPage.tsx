@@ -224,10 +224,25 @@ const PlayerPage = () => {
   const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
   const source = sources[currentSourceIdx];
 
-  // Auto-fullscreen on mobile
+  // Auto-fullscreen on mobile (Android + iOS)
   useEffect(() => {
-    if (isMobile && containerRef.current && !document.fullscreenElement) {
-      containerRef.current.requestFullscreen?.().then(() => setFullscreen(true)).catch(() => {});
+    if (!isMobile) return;
+    // Android: use Fullscreen API on the container
+    if (containerRef.current && !document.fullscreenElement) {
+      containerRef.current.requestFullscreen?.().then(() => setFullscreen(true)).catch(() => {
+        // iOS fallback: use webkit fullscreen on the video element once it's ready
+        const video = videoRef.current as any;
+        if (video?.webkitEnterFullscreen) {
+          const tryIOSFullscreen = () => {
+            try { video.webkitEnterFullscreen(); setFullscreen(true); } catch {}
+          };
+          if (video.readyState >= 1) {
+            tryIOSFullscreen();
+          } else {
+            video.addEventListener("loadedmetadata", tryIOSFullscreen, { once: true });
+          }
+        }
+      });
     }
   }, [isMobile]);
 
