@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Users } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
 import CreateRoomModal from "./CreateRoomModal";
 import JoinRoomModal from "./JoinRoomModal";
 import WatchTogetherInfoModal from "./WatchTogetherInfoModal";
@@ -22,15 +23,35 @@ const WatchTogetherButton = ({
   const [showCreate, setShowCreate] = useState(false);
   const [showJoin, setShowJoin] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
+  const [enabled, setEnabled] = useState<boolean | null>(null);
 
   const isLoggedIn = !!profileId;
 
-  // Step 1: Always show info modal first
+  // Fetch admin setting
+  useEffect(() => {
+    const fetchSetting = async () => {
+      try {
+        const { data } = await supabase
+          .from("site_settings")
+          .select("value")
+          .eq("key", "watch_together_enabled")
+          .maybeSingle();
+
+        setEnabled((data?.value as any)?.value === true);
+      } catch {
+        setEnabled(false);
+      }
+    };
+    fetchSetting();
+  }, []);
+
+  // Don't render if disabled or still loading
+  if (enabled !== true) return null;
+
   const handleButtonClick = () => {
     setShowInfo(true);
   };
 
-  // Step 2: After info modal, show create/join menu (only if logged in)
   const handleContinue = () => {
     setShowInfo(false);
     setShowMenu(true);
@@ -38,7 +59,6 @@ const WatchTogetherButton = ({
 
   return (
     <>
-      {/* Always visible button */}
       <button
         onClick={handleButtonClick}
         className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white/10 backdrop-blur-sm border border-white/10 text-white text-sm font-medium hover:bg-white/20 hover:border-primary/30 transition-all duration-200 group"
@@ -47,18 +67,12 @@ const WatchTogetherButton = ({
         <span className="hidden sm:inline">Assistir Junto</span>
       </button>
 
-      {/* Create/Join dropdown menu */}
       {showMenu && (
         <div className="fixed inset-0 z-[9998]">
           <div className="fixed inset-0" onClick={() => setShowMenu(false)} />
           <div
             className="fixed z-[9999] w-56 bg-card/95 backdrop-blur-xl border border-white/10 rounded-2xl p-2 shadow-2xl"
-            style={{
-              bottom: "auto",
-              left: "50%",
-              top: "50%",
-              transform: "translate(-50%, -50%)",
-            }}
+            style={{ left: "50%", top: "50%", transform: "translate(-50%, -50%)" }}
           >
             <p className="text-xs text-muted-foreground px-4 pt-2 pb-1 font-medium">O que deseja fazer?</p>
             <button
@@ -89,7 +103,6 @@ const WatchTogetherButton = ({
         </div>
       )}
 
-      {/* Step 1: Info/explanation modal */}
       {showInfo && (
         <WatchTogetherInfoModal
           isLoggedIn={isLoggedIn}
@@ -98,7 +111,6 @@ const WatchTogetherButton = ({
         />
       )}
 
-      {/* Step 3a: Create room modal */}
       {showCreate && profileId && (
         <CreateRoomModal
           profileId={profileId}
@@ -113,7 +125,6 @@ const WatchTogetherButton = ({
         />
       )}
 
-      {/* Step 3b: Join room modal */}
       {showJoin && profileId && (
         <JoinRoomModal
           profileId={profileId}

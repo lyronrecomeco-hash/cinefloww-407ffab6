@@ -1,12 +1,13 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { Settings, Save, Loader2 } from "lucide-react";
+import { Settings, Save, Loader2, Users } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 const SettingsPage = () => {
   const [siteName, setSiteName] = useState("Cineflow");
   const [siteDescription, setSiteDescription] = useState("");
   const [maintenanceMode, setMaintenanceMode] = useState(false);
+  const [watchTogetherEnabled, setWatchTogetherEnabled] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
@@ -19,6 +20,7 @@ const SettingsPage = () => {
           if (s.key === "site_name") setSiteName(s.value?.value || "Cineflow");
           if (s.key === "site_description") setSiteDescription(s.value?.value || "");
           if (s.key === "maintenance_mode") setMaintenanceMode(s.value?.value || false);
+          if (s.key === "watch_together_enabled") setWatchTogetherEnabled(s.value?.value ?? false);
         });
       }
       setLoading(false);
@@ -33,6 +35,7 @@ const SettingsPage = () => {
         { key: "site_name", value: { value: siteName } },
         { key: "site_description", value: { value: siteDescription } },
         { key: "maintenance_mode", value: { value: maintenanceMode } },
+        { key: "watch_together_enabled", value: { value: watchTogetherEnabled } },
       ];
 
       for (const s of settings) {
@@ -96,6 +99,24 @@ const SettingsPage = () => {
             className={`w-11 h-6 rounded-full transition-colors relative ${maintenanceMode ? "bg-primary" : "bg-white/10"}`}
           >
             <div className={`w-4.5 h-4.5 rounded-full bg-white absolute top-[3px] transition-all ${maintenanceMode ? "left-[22px]" : "left-[3px]"}`} />
+          </button>
+        </div>
+
+        <div className="flex items-center justify-between p-4 rounded-xl bg-white/[0.03] border border-white/5">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-primary/15 flex items-center justify-center">
+              <Users className="w-4 h-4 text-primary" />
+            </div>
+            <div>
+              <p className="text-sm font-medium">Watch Together (Assistir Junto)</p>
+              <p className="text-xs text-muted-foreground mt-0.5">Exibe o botão de assistir junto nas páginas de detalhe</p>
+            </div>
+          </div>
+          <button
+            onClick={() => setWatchTogetherEnabled(!watchTogetherEnabled)}
+            className={`w-11 h-6 rounded-full transition-colors relative ${watchTogetherEnabled ? "bg-primary" : "bg-white/10"}`}
+          >
+            <div className={`w-4.5 h-4.5 rounded-full bg-white absolute top-[3px] transition-all ${watchTogetherEnabled ? "left-[22px]" : "left-[3px]"}`} />
           </button>
         </div>
 
