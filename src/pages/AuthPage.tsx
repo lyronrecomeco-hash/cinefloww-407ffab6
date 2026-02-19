@@ -3,6 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { ArrowRight, Loader2, Mail, Lock, User, Eye, EyeOff, Shield } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import authBg from "@/assets/auth-bg.jpg";
+import lyneflixLogo from "@/assets/lyneflix-logo.png";
 
 const AuthPage = () => {
   const [mode, setMode] = useState<"login" | "signup">("login");
@@ -17,7 +19,6 @@ const AuthPage = () => {
 
   useEffect(() => {
     setMounted(true);
-    // If already logged in, go to profile selector
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session) navigate("/perfis");
     });
@@ -67,11 +68,9 @@ const AuthPage = () => {
         if (error) throw error;
         await logAuthEvent("signup", data.user?.id, { email: email.trim() });
 
-        // Check if email confirmation is required
         if (data.user && !data.session) {
           toast({ title: "Verifique seu e-mail", description: "Enviamos um link de confirmação para seu e-mail." });
         } else if (data.session) {
-          // Auto-create default profile
           await supabase.from("user_profiles").insert({
             user_id: data.user!.id,
             name: name.trim(),
@@ -81,7 +80,6 @@ const AuthPage = () => {
           navigate("/perfis");
         }
       } else {
-        // Check if banned
         const { data, error } = await supabase.auth.signInWithPassword({
           email: email.trim(),
           password,
@@ -91,7 +89,6 @@ const AuthPage = () => {
           throw error;
         }
 
-        // Check ban status
         const { data: profile } = await supabase
           .from("profiles")
           .select("banned, ban_reason")
@@ -109,7 +106,6 @@ const AuthPage = () => {
           return;
         }
 
-        // Update profile login info
         const ipHash = await getIpHash();
         await supabase
           .from("profiles")
@@ -122,14 +118,12 @@ const AuthPage = () => {
 
         await logAuthEvent("login_success", data.user.id);
 
-        // Check if has profiles
         const { data: profiles } = await supabase
           .from("user_profiles")
           .select("id")
           .eq("user_id", data.user.id);
 
         if (!profiles?.length) {
-          // Create default profile
           await supabase.from("user_profiles").insert({
             user_id: data.user.id,
             name: data.user.user_metadata?.name || email.split("@")[0],
@@ -152,138 +146,146 @@ const AuthPage = () => {
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4 relative overflow-hidden">
-      {/* Cinematic background */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute inset-0 bg-[url('https://image.tmdb.org/t/p/original/9faGSFi5jam6pDWGNd0p8JcJgXQ.jpg')] bg-cover bg-center opacity-[0.12]" />
-        <div className="absolute inset-0 bg-gradient-to-b from-background via-background/85 to-background" />
-        <div className="absolute top-1/4 left-1/4 w-[500px] h-[500px] rounded-full bg-primary/8 blur-[150px] animate-pulse" />
-        <div className="absolute bottom-1/4 right-1/4 w-[400px] h-[400px] rounded-full bg-blue-600/8 blur-[120px] animate-pulse" style={{ animationDelay: "1s" }} />
-      </div>
+      {/* Global background */}
+      <div className="absolute inset-0 bg-background" />
 
       <div
-        className={`w-full max-w-md transition-all duration-700 ${mounted ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"}`}
+        className={`w-full max-w-[900px] transition-all duration-700 ${mounted ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"}`}
       >
-        {/* Glass card */}
-        <div className="glass-strong rounded-3xl p-8 sm:p-10 relative overflow-hidden">
-          {/* Security badge */}
-          <div className="absolute top-4 right-4 flex items-center gap-1 text-[10px] text-emerald-400/60 uppercase tracking-widest">
-            <Shield className="w-3 h-3" />
-            <span>E2E</span>
-          </div>
-
-          {/* Logo */}
-          <div className="flex justify-center mb-6">
-            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-primary/30 to-purple-600/20 border border-white/10 flex items-center justify-center">
-              <span className="text-primary font-display font-bold text-2xl">L</span>
+        {/* Split card */}
+        <div className="glass-strong rounded-2xl overflow-hidden border border-white/10 flex flex-col lg:flex-row min-h-[500px]">
+          
+          {/* Left - Cinematic side */}
+          <div className="relative lg:w-1/2 h-48 lg:h-auto overflow-hidden flex-shrink-0">
+            <img src={authBg} alt="" className="absolute inset-0 w-full h-full object-cover" />
+            <div className="absolute inset-0 bg-gradient-to-t lg:bg-gradient-to-r from-background/95 via-background/60 to-transparent" />
+            <div className="relative z-10 p-6 sm:p-8 lg:p-10 flex flex-col justify-end lg:justify-center h-full">
+              <p className="text-[10px] uppercase tracking-[0.3em] text-primary/80 font-medium mb-2">LYNEFLIX STREAMING</p>
+              <h2 className="font-display text-2xl sm:text-3xl lg:text-4xl font-bold leading-tight">
+                Seu cinema{" "}
+                <span className="text-primary">pessoal.</span>
+              </h2>
+              <p className="text-sm text-muted-foreground mt-2 max-w-[280px] hidden lg:block">
+                Filmes, séries e doramas em um só lugar. Sem anúncios, sem limites.
+              </p>
             </div>
           </div>
 
-          <h1 className="font-display text-2xl font-bold text-center mb-1">
-            {mode === "login" ? "Bem-vindo de volta" : "Crie sua conta"}
-          </h1>
-          <p className="text-sm text-muted-foreground text-center mb-8">
-            {mode === "login"
-              ? "Entre para continuar assistindo"
-              : "Cadastre-se para salvar sua lista e muito mais"}
-          </p>
+          {/* Right - Form side */}
+          <div className="lg:w-1/2 p-6 sm:p-8 lg:p-10 flex flex-col justify-center bg-card/50">
+            {/* Logo */}
+            <div className="flex justify-center mb-6">
+              <img src={lyneflixLogo} alt="LyneFlix" className="h-10 object-contain" />
+            </div>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {mode === "signup" && (
-              <div className={`transition-all duration-500 ${mode === "signup" ? "opacity-100 max-h-20" : "opacity-0 max-h-0 overflow-hidden"}`}>
+            <h1 className="font-display text-xl sm:text-2xl font-bold text-center mb-1">
+              {mode === "login" ? "Acesse sua conta" : "Crie sua conta"}
+            </h1>
+            <p className="text-sm text-muted-foreground text-center mb-6">
+              {mode === "login"
+                ? "Bem-vindo de volta. Digite seus dados para entrar."
+                : "Cadastre-se para salvar sua lista e muito mais."}
+            </p>
+
+            <form onSubmit={handleSubmit} className="space-y-4">
+              {mode === "signup" && (
+                <div className="animate-in fade-in slide-in-from-top-2 duration-300">
+                  <label className="block text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">
+                    Nome
+                  </label>
+                  <div className="relative">
+                    <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/50" />
+                    <input
+                      type="text"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      placeholder="Seu nome"
+                      className="w-full h-11 pl-10 pr-4 rounded-lg bg-white/5 border border-white/10 text-sm text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-primary/50 transition-colors"
+                      maxLength={50}
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div>
                 <label className="block text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">
-                  Nome
+                  E-mail
                 </label>
                 <div className="relative">
-                  <User className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/50" />
+                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/50" />
                   <input
-                    type="text"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder="Seu nome"
-                    className="w-full h-12 pl-11 pr-4 rounded-xl bg-white/5 border border-white/10 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/50 transition-colors"
-                    maxLength={50}
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="seu@email.com"
+                    className="w-full h-11 pl-10 pr-4 rounded-lg bg-white/5 border border-white/10 text-sm text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-primary/50 transition-colors"
+                    required
+                    maxLength={255}
                   />
                 </div>
               </div>
-            )}
 
-            <div>
-              <label className="block text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">
-                E-mail
-              </label>
-              <div className="relative">
-                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/50" />
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="seu@email.com"
-                  className="w-full h-12 pl-11 pr-4 rounded-xl bg-white/5 border border-white/10 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/50 transition-colors"
-                  required
-                  maxLength={255}
-                />
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">
+                  Senha
+                </label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/50" />
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full h-11 pl-10 pr-11 rounded-lg bg-white/5 border border-white/10 text-sm text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-primary/50 transition-colors"
+                    required
+                    minLength={6}
+                    maxLength={72}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground/50 hover:text-foreground transition-colors"
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
               </div>
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full h-11 rounded-lg font-semibold text-sm transition-all flex items-center justify-center gap-2 bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 mt-2"
+              >
+                {loading ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <>
+                    {mode === "login" ? "ENTRAR" : "CRIAR CONTA"}
+                    <ArrowRight className="w-4 h-4" />
+                  </>
+                )}
+              </button>
+            </form>
+
+            <div className="mt-5 text-center">
+              <button
+                onClick={() => setMode(mode === "login" ? "signup" : "login")}
+                className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+              >
+                {mode === "login" ? (
+                  <>Não tem conta? <span className="text-primary font-medium">Cadastre-se</span></>
+                ) : (
+                  <>Já tem conta? <span className="text-primary font-medium">Entrar</span></>
+                )}
+              </button>
             </div>
 
-            <div>
-              <label className="block text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">
-                Senha
-              </label>
-              <div className="relative">
-                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/50" />
-                <input
-                  type={showPassword ? "text" : "password"}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="w-full h-12 pl-11 pr-12 rounded-xl bg-white/5 border border-white/10 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/50 transition-colors"
-                  required
-                  minLength={6}
-                  maxLength={72}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground/50 hover:text-foreground transition-colors"
-                >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
+            <div className="flex items-center justify-center gap-1 mt-4 text-[10px] text-muted-foreground/40 uppercase tracking-widest">
+              <Shield className="w-3 h-3" />
+              <span>Conexão segura E2E</span>
             </div>
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full h-12 rounded-xl font-semibold text-sm transition-all flex items-center justify-center gap-2 bg-gradient-to-r from-primary to-purple-600 text-white hover:opacity-90 disabled:opacity-50 mt-6"
-            >
-              {loading ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <>
-                  {mode === "login" ? "ENTRAR" : "CRIAR CONTA"}
-                  <ArrowRight className="w-4 h-4" />
-                </>
-              )}
-            </button>
-          </form>
-
-          <div className="mt-6 text-center">
-            <button
-              onClick={() => setMode(mode === "login" ? "signup" : "login")}
-              className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-            >
-              {mode === "login" ? (
-                <>Não tem conta? <span className="text-primary font-medium">Cadastre-se</span></>
-              ) : (
-                <>Já tem conta? <span className="text-primary font-medium">Entrar</span></>
-              )}
-            </button>
           </div>
         </div>
-
-        <p className="text-[10px] text-muted-foreground/40 text-center mt-4">
-          Protegido com criptografia ponta a ponta
-        </p>
       </div>
     </div>
   );
