@@ -396,6 +396,69 @@ export type Database = {
         }
         Relationships: []
       }
+      telegram_ingestions: {
+        Row: {
+          content_type: string
+          created_at: string
+          duration: number | null
+          episode: number | null
+          episode_title: string | null
+          file_name: string | null
+          file_size: number | null
+          id: string
+          mime_type: string | null
+          resolution: string | null
+          season: number | null
+          status: string
+          synopsis: string | null
+          telegram_file_id: string
+          telegram_unique_id: string
+          telegram_user_id: number
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          content_type?: string
+          created_at?: string
+          duration?: number | null
+          episode?: number | null
+          episode_title?: string | null
+          file_name?: string | null
+          file_size?: number | null
+          id?: string
+          mime_type?: string | null
+          resolution?: string | null
+          season?: number | null
+          status?: string
+          synopsis?: string | null
+          telegram_file_id: string
+          telegram_unique_id: string
+          telegram_user_id: number
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          content_type?: string
+          created_at?: string
+          duration?: number | null
+          episode?: number | null
+          episode_title?: string | null
+          file_name?: string | null
+          file_size?: number | null
+          id?: string
+          mime_type?: string | null
+          resolution?: string | null
+          season?: number | null
+          status?: string
+          synopsis?: string | null
+          telegram_file_id?: string
+          telegram_unique_id?: string
+          telegram_user_id?: number
+          title?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           created_at: string

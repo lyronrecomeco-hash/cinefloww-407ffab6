@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { Database, Film, Tv, Copy, Check, ExternalLink, Search, RefreshCw } from "lucide-react";
+import { Database, Film, Tv, Copy, Check, ExternalLink, Search, RefreshCw, ChevronLeft, ChevronRight } from "lucide-react";
 
 interface CachedVideo {
   id: string;
@@ -18,6 +18,8 @@ interface CachedVideo {
   title?: string;
 }
 
+const ITEMS_PER_PAGE = 50;
+
 const DadosPage = () => {
   const navigate = useNavigate();
   const [authorized, setAuthorized] = useState(false);
@@ -27,8 +29,9 @@ const DadosPage = () => {
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [stats, setStats] = useState({ total: 0, movies: 0, series: 0, expired: 0 });
+  const [page, setPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
 
-  // Auth check
   useEffect(() => {
     const check = async () => {
       const { data: { session } } = await supabase.auth.getSession();
@@ -41,24 +44,33 @@ const DadosPage = () => {
         .maybeSingle();
       if (!data) { navigate("/"); return; }
       setAuthorized(true);
-      fetchData();
     };
     check();
   }, [navigate]);
 
+  useEffect(() => {
+    if (authorized) fetchData();
+  }, [authorized, page, typeFilter, filter]);
+
   const fetchData = useCallback(async () => {
     setLoading(true);
-    
-    // Get all video cache entries
-    const { data: cacheData } = await supabase
-      .from("video_cache")
-      .select("*")
-      .order("created_at", { ascending: false })
-      .limit(1000);
+
+    // Count total
+    let countQuery = supabase.from("video_cache").select("id", { count: "exact", head: true });
+    if (typeFilter !== "all") countQuery = countQuery.eq("content_type", typeFilter);
+    const { count } = await countQuery;
+    setTotalCount(count || 0);
+
+    // Fetch page
+    const from = (page - 1) * ITEMS_PER_PAGE;
+    const to = from + ITEMS_PER_PAGE - 1;
+    let query = supabase.from("video_cache").select("*").order("created_at", { ascending: false }).range(from, to);
+    if (typeFilter !== "all") query = query.eq("content_type", typeFilter);
+    const { data: cacheData } = await query;
 
     if (!cacheData) { setLoading(false); return; }
 
-    // Get titles for all tmdb_ids
+    // Get titles
     const tmdbIds = [...new Set(cacheData.map(v => v.tmdb_id))];
     const { data: contentData } = await supabase
       .from("content")
@@ -72,18 +84,33 @@ const DadosPage = () => {
       title: titleMap.get(`${v.tmdb_id}-${v.content_type}`) || `TMDB ${v.tmdb_id}`,
     }));
 
-    setVideos(enriched);
+    // Apply text filter client-side
+    const filtered = filter
+      ? enriched.filter(v => v.title?.toLowerCase().includes(filter.toLowerCase()) || String(v.tmdb_id).includes(filter))
+      : enriched;
 
-    const now = new Date().toISOString();
-    setStats({
-      total: enriched.length,
-      movies: enriched.filter(v => v.content_type === "movie").length,
-      series: enriched.filter(v => v.content_type === "series").length,
-      expired: enriched.filter(v => v.expires_at < now).length,
-    });
+    setVideos(filtered);
+
+    // Stats (first page only)
+    if (page === 1 && !filter) {
+      const now = new Date().toISOString();
+      // Get full counts
+      const [{ count: mc }, { count: sc }] = await Promise.all([
+        supabase.from("video_cache").select("id", { count: "exact", head: true }).eq("content_type", "movie"),
+        supabase.from("video_cache").select("id", { count: "exact", head: true }).eq("content_type", "series"),
+      ]);
+      setStats({
+        total: count || 0,
+        movies: mc || 0,
+        series: sc || 0,
+        expired: enriched.filter(v => v.expires_at < now).length,
+      });
+    }
 
     setLoading(false);
-  }, []);
+  }, [page, typeFilter, filter]);
+
+  const totalPages = Math.ceil(totalCount / ITEMS_PER_PAGE);
 
   const copyUrl = (id: string, url: string) => {
     navigator.clipboard.writeText(url);
@@ -91,14 +118,8 @@ const DadosPage = () => {
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  const filtered = videos.filter(v => {
-    if (typeFilter !== "all" && v.content_type !== typeFilter) return false;
-    if (filter && !v.title?.toLowerCase().includes(filter.toLowerCase()) && !String(v.tmdb_id).includes(filter)) return false;
-    return true;
-  });
-
   // Group by content
-  const grouped = filtered.reduce((acc, v) => {
+  const grouped = videos.reduce((acc, v) => {
     const key = `${v.tmdb_id}-${v.content_type}`;
     if (!acc[key]) acc[key] = { title: v.title || "", tmdb_id: v.tmdb_id, content_type: v.content_type, items: [] };
     acc[key].items.push(v);
@@ -118,10 +139,10 @@ const DadosPage = () => {
             </div>
             <div>
               <h1 className="text-xl font-bold">Banco de Dados de Vídeos</h1>
-              <p className="text-xs text-muted-foreground">Todos os links salvos — acesso restrito</p>
+              <p className="text-xs text-muted-foreground">Todos os links salvos — {totalCount} registros</p>
             </div>
           </div>
-          <button onClick={fetchData} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-sm">
+          <button onClick={() => { setPage(1); fetchData(); }} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-muted/50 border border-border hover:bg-muted text-sm">
             <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
             Atualizar
           </button>
@@ -135,7 +156,7 @@ const DadosPage = () => {
             { label: "Séries", value: stats.series, icon: Tv },
             { label: "Expirados", value: stats.expired, icon: RefreshCw },
           ].map(s => (
-            <div key={s.label} className="p-3 rounded-xl bg-white/5 border border-white/10">
+            <div key={s.label} className="p-3 rounded-xl bg-muted/30 border border-border">
               <div className="flex items-center gap-2 mb-1">
                 <s.icon className="w-4 h-4 text-primary" />
                 <span className="text-xs text-muted-foreground">{s.label}</span>
@@ -151,23 +172,67 @@ const DadosPage = () => {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <input
               value={filter}
-              onChange={e => setFilter(e.target.value)}
+              onChange={e => { setFilter(e.target.value); setPage(1); }}
               placeholder="Buscar por título ou TMDB ID..."
-              className="w-full h-10 pl-9 pr-4 rounded-xl bg-white/5 border border-white/10 text-sm focus:outline-none focus:border-primary/50"
+              className="w-full h-10 pl-9 pr-4 rounded-xl bg-muted/30 border border-border text-sm focus:outline-none focus:border-primary/50"
             />
           </div>
           {["all", "movie", "series"].map(t => (
             <button
               key={t}
-              onClick={() => setTypeFilter(t)}
+              onClick={() => { setTypeFilter(t); setPage(1); }}
               className={`px-4 py-2 rounded-xl text-xs font-medium border transition-colors ${
-                typeFilter === t ? "bg-primary/20 border-primary/30 text-primary" : "bg-white/5 border-white/10 text-muted-foreground hover:bg-white/10"
+                typeFilter === t ? "bg-primary/20 border-primary/30 text-primary" : "bg-muted/30 border-border text-muted-foreground hover:bg-muted/50"
               }`}
             >
               {t === "all" ? "Todos" : t === "movie" ? "Filmes" : "Séries"}
             </button>
           ))}
         </div>
+
+        {/* Pagination Top */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between mb-4">
+            <span className="text-xs text-muted-foreground">
+              Página {page} de {totalPages}
+            </span>
+            <div className="flex gap-2">
+              <button
+                disabled={page <= 1}
+                onClick={() => setPage(p => p - 1)}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-muted/30 border border-border text-xs disabled:opacity-30 hover:bg-muted/50"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" /> Anterior
+              </button>
+              {/* Page numbers */}
+              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                let p: number;
+                if (totalPages <= 5) p = i + 1;
+                else if (page <= 3) p = i + 1;
+                else if (page >= totalPages - 2) p = totalPages - 4 + i;
+                else p = page - 2 + i;
+                return (
+                  <button
+                    key={p}
+                    onClick={() => setPage(p)}
+                    className={`w-8 h-8 rounded-lg text-xs font-medium ${
+                      p === page ? "bg-primary text-primary-foreground" : "bg-muted/30 border border-border hover:bg-muted/50"
+                    }`}
+                  >
+                    {p}
+                  </button>
+                );
+              })}
+              <button
+                disabled={page >= totalPages}
+                onClick={() => setPage(p => p + 1)}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-muted/30 border border-border text-xs disabled:opacity-30 hover:bg-muted/50"
+              >
+                Próximo <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Content */}
         {loading ? (
@@ -177,8 +242,8 @@ const DadosPage = () => {
         ) : (
           <div className="space-y-3">
             {Object.values(grouped).map(group => (
-              <div key={`${group.tmdb_id}-${group.content_type}`} className="rounded-xl bg-white/[0.03] border border-white/10 overflow-hidden">
-                <div className="flex items-center justify-between px-4 py-3 bg-white/[0.02]">
+              <div key={`${group.tmdb_id}-${group.content_type}`} className="rounded-xl bg-muted/10 border border-border overflow-hidden">
+                <div className="flex items-center justify-between px-4 py-3 bg-muted/20">
                   <div className="flex items-center gap-2">
                     {group.content_type === "movie" ? <Film className="w-4 h-4 text-primary" /> : <Tv className="w-4 h-4 text-primary" />}
                     <span className="font-medium text-sm">{group.title}</span>
@@ -186,24 +251,24 @@ const DadosPage = () => {
                   </div>
                   <span className="text-xs text-muted-foreground">{group.items.length} link(s)</span>
                 </div>
-                <div className="divide-y divide-white/5">
+                <div className="divide-y divide-border/30">
                   {group.items.map(v => {
                     const isExpired = v.expires_at < new Date().toISOString();
                     return (
                       <div key={v.id} className={`flex items-center gap-3 px-4 py-2 text-xs ${isExpired ? "opacity-40" : ""}`}>
-                        <span className="px-2 py-0.5 rounded bg-white/10 text-[10px] font-mono">{v.audio_type}</span>
+                        <span className="px-2 py-0.5 rounded bg-muted text-[10px] font-mono">{v.audio_type}</span>
                         {v.season != null && <span className="text-muted-foreground">T{v.season}E{v.episode}</span>}
-                        <span className="px-2 py-0.5 rounded bg-white/10 text-[10px]">{v.provider}</span>
-                        <span className="px-2 py-0.5 rounded bg-white/10 text-[10px]">{v.video_type}</span>
+                        <span className="px-2 py-0.5 rounded bg-muted text-[10px]">{v.provider}</span>
+                        <span className="px-2 py-0.5 rounded bg-muted text-[10px]">{v.video_type}</span>
                         <code className="flex-1 truncate text-muted-foreground font-mono text-[10px]">{v.video_url}</code>
                         <button
                           onClick={() => copyUrl(v.id, v.video_url)}
-                          className="flex-shrink-0 p-1.5 rounded-lg hover:bg-white/10 transition-colors"
+                          className="flex-shrink-0 p-1.5 rounded-lg hover:bg-muted transition-colors"
                           title="Copiar URL"
                         >
                           {copiedId === v.id ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
                         </button>
-                        <a href={v.video_url} target="_blank" rel="noopener noreferrer" className="flex-shrink-0 p-1.5 rounded-lg hover:bg-white/10 transition-colors" title="Abrir">
+                        <a href={v.video_url} target="_blank" rel="noopener noreferrer" className="flex-shrink-0 p-1.5 rounded-lg hover:bg-muted transition-colors" title="Abrir">
                           <ExternalLink className="w-3.5 h-3.5" />
                         </a>
                       </div>
@@ -215,6 +280,21 @@ const DadosPage = () => {
             {Object.keys(grouped).length === 0 && (
               <p className="text-center text-muted-foreground py-20">Nenhum vídeo encontrado.</p>
             )}
+          </div>
+        )}
+
+        {/* Pagination Bottom */}
+        {totalPages > 1 && (
+          <div className="flex justify-center mt-6">
+            <div className="flex gap-2">
+              <button disabled={page <= 1} onClick={() => setPage(p => p - 1)} className="px-3 py-1.5 rounded-lg bg-muted/30 border border-border text-xs disabled:opacity-30 hover:bg-muted/50">
+                <ChevronLeft className="w-3.5 h-3.5" />
+              </button>
+              <span className="px-3 py-1.5 text-xs text-muted-foreground">{page} / {totalPages}</span>
+              <button disabled={page >= totalPages} onClick={() => setPage(p => p + 1)} className="px-3 py-1.5 rounded-lg bg-muted/30 border border-border text-xs disabled:opacity-30 hover:bg-muted/50">
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
         )}
       </div>
