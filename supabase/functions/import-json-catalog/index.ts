@@ -32,24 +32,30 @@ Deno.serve(async (req: Request) => {
     return new Response(null, { headers: corsHeaders });
 
   try {
-    const authHeader = req.headers.get("Authorization");
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
-
-    const userClient = createClient(supabaseUrl, anonKey, {
-      global: { headers: { Authorization: authHeader || "" } },
-    });
-    const { data: { user } } = await userClient.auth.getUser();
-    if (!user) throw new Error("Unauthorized");
-
     const adminClient = createClient(supabaseUrl, serviceKey);
-    const { data: roles } = await adminClient
-      .from("user_roles").select("role")
-      .eq("user_id", user.id).eq("role", "admin");
-    if (!roles?.length) throw new Error("Not admin");
 
     const body = await req.json();
+    
+    // Auto mode: called with items array directly (self-chain or admin trigger)
+    const isAutoMode = body.auto === true;
+    
+    if (!isAutoMode) {
+      // Manual mode: verify admin auth
+      const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+      const authHeader = req.headers.get("Authorization");
+      const userClient = createClient(supabaseUrl, anonKey, {
+        global: { headers: { Authorization: authHeader || "" } },
+      });
+      const { data: { user } } = await userClient.auth.getUser();
+      if (!user) throw new Error("Unauthorized");
+      const { data: roles } = await adminClient
+        .from("user_roles").select("role")
+        .eq("user_id", user.id).eq("role", "admin");
+      if (!roles?.length) throw new Error("Not admin");
+    }
+
     const items: JsonItem[] = body.items || [];
     const offset: number = body.offset || 0;
     const batchSize: number = body.batch_size || 200;
@@ -87,6 +93,9 @@ Deno.serve(async (req: Request) => {
 
     console.log(`[import-json] Batch offset=${offset}, total=${batch.length}, new=${toImport.length}, skipped=${batch.length - toImport.length}`);
 
+    // Log skipped items
+    const skippedCount = batch.length - toImport.length;
+
     // Enrich via TMDB in parallel (8 workers)
     const enriched: any[] = [];
     const queue = [...toImport];
@@ -101,10 +110,14 @@ Deno.serve(async (req: Request) => {
           const res = await fetch(url, { headers: tmdbHeaders });
           if (res.ok) {
             const d = await res.json();
+            const title = d.title || d.name || item.name || "Sem título";
+            const contentType = item.type === "movie" ? "movie" : "series";
+            const hasOverview = d.overview && d.overview.length > 10;
+
             enriched.push({
               tmdb_id: item.id,
-              content_type: item.type === "movie" ? "movie" : "series",
-              title: d.title || d.name || item.name || "Sem título",
+              content_type: contentType,
+              title,
               original_title: d.original_title || d.original_name || item.original_name || null,
               overview: d.overview || "",
               poster_path: d.poster_path || null,
@@ -115,15 +128,43 @@ Deno.serve(async (req: Request) => {
               imdb_id: d.imdb_id || d.external_ids?.imdb_id || null,
               number_of_seasons: d.number_of_seasons || null,
               number_of_episodes: d.number_of_episodes || null,
-              status: (d.overview && d.overview.length > 10) ? "published" : "draft",
+              status: hasOverview ? "published" : "draft",
               featured: false,
               audio_type: ["legendado"],
-              created_by: user.id,
+            });
+
+            // Log success to resolve_logs
+            await adminClient.from("resolve_logs").insert({
+              tmdb_id: item.id,
+              title,
+              content_type: contentType,
+              provider: "json-import",
+              success: true,
+              video_url: null,
+              video_type: null,
+              error_message: null,
             });
           } else if (res.status === 404) {
-            // TMDB doesn't know this ID, skip
+            // Log 404
+            await adminClient.from("resolve_logs").insert({
+              tmdb_id: item.id,
+              title: item.name || `TMDB #${item.id}`,
+              content_type: item.type === "movie" ? "movie" : "series",
+              provider: "json-import",
+              success: false,
+              error_message: "TMDB 404 - não encontrado",
+            });
           }
-        } catch { /* skip */ }
+        } catch (err) {
+          await adminClient.from("resolve_logs").insert({
+            tmdb_id: item.id,
+            title: item.name || `TMDB #${item.id}`,
+            content_type: item.type === "movie" ? "movie" : "series",
+            provider: "json-import",
+            success: false,
+            error_message: `Erro: ${err instanceof Error ? err.message : "unknown"}`,
+          });
+        }
       }
     }
 
@@ -146,15 +187,34 @@ Deno.serve(async (req: Request) => {
     }
 
     const done = offset + batchSize >= items.length;
+    const nextOffset = offset + batchSize;
+
+    // Self-chain if more to process
+    if (!done) {
+      const selfUrl = `${supabaseUrl}/functions/v1/import-json-catalog`;
+      fetch(selfUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${serviceKey}`,
+        },
+        body: JSON.stringify({
+          auto: true,
+          items,
+          offset: nextOffset,
+          batch_size: batchSize,
+        }),
+      }).catch(() => {});
+    }
 
     return new Response(
       JSON.stringify({
         success: true,
         imported,
-        skipped: batch.length - toImport.length,
+        skipped: skippedCount,
         enriched_count: enriched.length,
         batch_processed: batch.length,
-        next_offset: done ? null : offset + batchSize,
+        next_offset: done ? null : nextOffset,
         done,
         errors: errors.slice(0, 3),
       }),
