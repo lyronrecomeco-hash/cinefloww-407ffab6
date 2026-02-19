@@ -101,14 +101,14 @@ const PlayerPage = () => {
   }, [params.id, params.type, audioParam, imdbId, season, episode]);
 
   const isLiveTV = !!tvChannelId;
+  const [tvHtml, setTvHtml] = useState<string | null>(null);
   const [tvIframeUrl, setTvIframeUrl] = useState<string | null>(null);
 
-  // TV channel — fetch proxied HTML and render via blob URL to bypass sandbox detection
+  // TV channel — fetch proxied HTML and render via srcdoc
   useEffect(() => {
     if (!tvChannelId) return;
     setBankLoading(true);
     let cancelled = false;
-    let blobUrl: string | null = null;
     const load = async () => {
       try {
         const { data: channel } = await supabase
@@ -128,12 +128,10 @@ const PlayerPage = () => {
           });
           if (cancelled) return;
           if (resp.data?.html) {
-            // Create blob URL so iframe loads from same origin, bypassing CSP
-            const blob = new Blob([resp.data.html], { type: "text/html" });
-            blobUrl = URL.createObjectURL(blob);
-            setTvIframeUrl(blobUrl);
+            setTvHtml(resp.data.html);
           } else {
-            // Fallback: direct embed URL
+            // Fallback: use stream_url directly as iframe src
+            setTvHtml(null);
             setTvIframeUrl(channel.stream_url);
           }
         }
@@ -143,7 +141,7 @@ const PlayerPage = () => {
       if (!cancelled) setBankLoading(false);
     };
     load();
-    return () => { cancelled = true; if (blobUrl) URL.revokeObjectURL(blobUrl); };
+    return () => { cancelled = true; };
   }, [tvChannelId]);
 
   const sources: VideoSource[] = useMemo(() => {
@@ -534,28 +532,26 @@ const PlayerPage = () => {
     <div ref={containerRef} className="fixed inset-0 z-[100] bg-black group"
       onMouseMove={resetControlsTimer} onTouchStart={resetControlsTimer}
       onClick={(e) => {
-        if (isLiveTV && tvIframeUrl) return; // Don't interfere with iframe
+        if (isLiveTV && (tvHtml || tvIframeUrl)) return; // Don't interfere with iframe
         const target = e.target as HTMLElement;
         if (target.closest('button') || target.closest('input') || target.closest('[data-controls]') || target.closest('iframe')) return;
         togglePlay();
       }}
       onDoubleClick={(e) => {
-        if (isLiveTV && tvIframeUrl) return;
+        if (isLiveTV && (tvHtml || tvIframeUrl)) return;
         const target = e.target as HTMLElement;
         if (target.closest('button') || target.closest('input') || target.closest('[data-controls]') || target.closest('iframe')) return;
         toggleFullscreen();
       }}
       style={{ cursor: showControls ? "default" : "none" }}>
       
-      {/* Live TV uses proxied iframe (sandbox detection stripped server-side) */}
-      {isLiveTV && tvIframeUrl ? (
+      {/* Live TV: srcdoc (proxied HTML) or fallback to direct iframe */}
+      {isLiveTV && (tvHtml || tvIframeUrl) ? (
         <iframe
-          src={tvIframeUrl}
+          {...(tvHtml ? { srcDoc: tvHtml } : { src: tvIframeUrl! })}
           className="w-full h-full border-0"
-          sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-presentation"
           allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
           allowFullScreen
-          referrerPolicy="no-referrer"
         />
       ) : (
         <video ref={videoRef} className="w-full h-full object-contain" playsInline
@@ -581,7 +577,7 @@ const PlayerPage = () => {
       )}
 
       {/* Loading - LYNEFLIX branded */}
-      {(loading || bankLoading) && !error && !(isLiveTV && tvIframeUrl) && (
+      {(loading || bankLoading) && !error && !(isLiveTV && (tvHtml || tvIframeUrl)) && (
         <div className="absolute inset-0 flex items-center justify-center z-10 bg-black">
           <div className="flex flex-col items-center gap-6">
             <div className="lyneflix-loader">
@@ -599,7 +595,7 @@ const PlayerPage = () => {
       )}
 
       {/* Error - Friendly modal */}
-      {(error || (!bankLoading && !loading && sources.length === 0 && !(isLiveTV && tvIframeUrl))) && (
+      {(error || (!bankLoading && !loading && sources.length === 0 && !(isLiveTV && (tvHtml || tvIframeUrl)))) && (
         <div className="absolute inset-0 flex items-center justify-center bg-black z-20">
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-[0.03]">
             <span className="text-[100px] sm:text-[140px] font-black tracking-wider text-white select-none">LYNEFLIX</span>
@@ -648,7 +644,7 @@ const PlayerPage = () => {
       )}
 
       {/* Controls - hide full controls for live TV iframe, show only back button */}
-      {isLiveTV && tvIframeUrl ? (
+      {isLiveTV && (tvHtml || tvIframeUrl) ? (
         <div className="absolute top-0 left-0 right-0 z-20 p-3 sm:p-4 pointer-events-none">
           <div className="flex items-center gap-3 pointer-events-auto w-fit">
             <button onClick={goBack} className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-black/60 backdrop-blur-sm flex items-center justify-center hover:bg-black/80 transition-colors">
