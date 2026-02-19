@@ -290,21 +290,20 @@ const DetailsPage = ({ type }: DetailsPageProps) => {
               </button>
               <button
                 onClick={() => {
-                  const url = window.location.href;
-                  const text = `🎬 Tô assistindo "${getDisplayTitle(detail)}" na LyneFlix e tá incrível! Vem conferir 👉 ${url}`;
+                  const shareUrl = window.location.href;
+                  const shareText = `🎬 Tô assistindo "${getDisplayTitle(detail)}" na LyneFlix e tá incrível! Vem conferir 👉`;
                   if (navigator.share) {
-                    navigator.share({ title: `${getDisplayTitle(detail)} — LyneFlix`, text, url }).catch(() => {});
+                    navigator.share({ title: `${getDisplayTitle(detail)} — LyneFlix`, text: shareText, url: shareUrl }).catch(() => {});
                   } else {
-                    navigator.clipboard.writeText(text).then(() => {
+                    navigator.clipboard.writeText(`${shareText} ${shareUrl}`).then(() => {
                       toast.success("Link copiado! Compartilhe com seus amigos 🚀");
                     });
                   }
                 }}
-                className="flex items-center gap-2 px-4 sm:px-5 py-2.5 sm:py-3 rounded-xl sm:rounded-2xl glass glass-hover font-semibold text-xs sm:text-sm"
+                className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl glass glass-hover flex items-center justify-center"
                 title="Compartilhar"
               >
-                <Share2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                Compartilhar
+                <Share2 className="w-4 h-4 sm:w-5 sm:h-5" />
               </button>
               <button
                 onClick={() => setShowReport(true)}

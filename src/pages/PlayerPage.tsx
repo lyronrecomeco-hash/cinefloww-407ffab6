@@ -252,15 +252,18 @@ const PlayerPage = () => {
         setLoading(false);
         setHlsLevels(data.levels.map(l => ({ height: l.height, bitrate: l.bitrate })));
         video.play().catch(() => {});
-        // Check for subtitle tracks
+        // Enable subtitle tracks if available
         if (hls.subtitleTracks?.length > 0) {
+          setCcTracks(Array.from(video.textTracks));
           hls.subtitleDisplay = ccEnabled;
           if (ccEnabled) hls.subtitleTrack = 0;
         }
       });
       hls.on(Hls.Events.LEVEL_SWITCHED, (_e, data) => setCurrentLevel(data.level));
       hls.on(Hls.Events.SUBTITLE_TRACKS_UPDATED, () => {
-        // Subtitles available from HLS
+        if (hls.subtitleTracks?.length > 0) {
+          setCcTracks(Array.from(video.textTracks));
+        }
       });
       hls.on(Hls.Events.ERROR, (_e, data) => {
         if (data.fatal) {
@@ -445,12 +448,16 @@ const PlayerPage = () => {
     setCcEnabled(newState);
     const video = videoRef.current;
     const hls = hlsRef.current;
-    if (hls && hls.subtitleTracks?.length > 0) {
-      hls.subtitleDisplay = newState;
-      if (newState) hls.subtitleTrack = 0;
-      else hls.subtitleTrack = -1;
-    } else if (video) {
-      // Native text tracks
+    
+    if (hls) {
+      if (hls.subtitleTracks?.length > 0) {
+        hls.subtitleDisplay = newState;
+        hls.subtitleTrack = newState ? 0 : -1;
+      }
+    }
+    
+    // Also handle native text tracks (for mp4 or Safari HLS)
+    if (video) {
       for (let i = 0; i < video.textTracks.length; i++) {
         video.textTracks[i].mode = newState ? "showing" : "hidden";
       }

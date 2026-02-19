@@ -100,13 +100,16 @@ const MAX_PAGES_PER_CALL = 20;
 
 // ── Dorama import via TMDB Discover (Korean/Japanese dramas) ────────
 async function fetchDoramaTMDBPage(page: number): Promise<any[]> {
-  // Search Korean and Japanese drama TV shows
+  // Search Korean, Japanese, Chinese, Thai drama TV shows — exclude animation (genre 16)
   const urls = [
-    `${TMDB_BASE}/discover/tv?language=pt-BR&sort_by=popularity.desc&with_origin_country=KR&with_genres=18&page=${page}`,
-    `${TMDB_BASE}/discover/tv?language=pt-BR&sort_by=popularity.desc&with_origin_country=JP&with_genres=18&page=${page}`,
+    `${TMDB_BASE}/discover/tv?language=pt-BR&sort_by=popularity.desc&with_origin_country=KR&with_genres=18&without_genres=16&page=${page}`,
+    `${TMDB_BASE}/discover/tv?language=pt-BR&sort_by=popularity.desc&with_origin_country=JP&with_genres=18&without_genres=16&page=${page}`,
+    `${TMDB_BASE}/discover/tv?language=pt-BR&sort_by=popularity.desc&with_origin_country=CN&with_genres=18&without_genres=16&page=${page}`,
+    `${TMDB_BASE}/discover/tv?language=pt-BR&sort_by=popularity.desc&with_origin_country=TH&with_genres=18&without_genres=16&page=${page}`,
   ];
   const allResults: any[] = [];
   const seenIds = new Set<number>();
+  const ANIME_GENRE = 16;
 
   for (const url of urls) {
     try {
@@ -115,6 +118,8 @@ async function fetchDoramaTMDBPage(page: number): Promise<any[]> {
       const data = await res.json();
       if (Array.isArray(data.results)) {
         for (const item of data.results) {
+          // Double-check: skip if genre_ids contains animation (16)
+          if (item.genre_ids?.includes(ANIME_GENRE)) continue;
           if (!seenIds.has(item.id)) {
             seenIds.add(item.id);
             allResults.push(item);
@@ -188,22 +193,55 @@ async function handleDoramaImport(
 
   console.log(`[import-dorama] Fetched ${allItems.length} doramas`);
 
-  // For doramas without Portuguese translation, try English name
-  const needsTranslation = allItems.filter(i => i.name === i.original_name && i.name);
+  // For doramas, always try to get Portuguese title, then English fallback
+  const needsTranslation = allItems.filter(i => !i.name || i.name === i.original_name);
   if (needsTranslation.length > 0) {
-    console.log(`[import-dorama] ${needsTranslation.length} need English fallback`);
-    // Batch fetch English names (max 5 concurrent)
+    console.log(`[import-dorama] ${needsTranslation.length} items need better titles`);
     for (let i = 0; i < needsTranslation.length; i += 5) {
       const batch = needsTranslation.slice(i, i + 5);
-      const results = await Promise.allSettled(
+      await Promise.allSettled(
         batch.map(async (item: any) => {
           try {
-            const res = await fetch(`${TMDB_BASE}/tv/${item.id}?language=en-US`, { headers: tmdbHeaders });
+            // Try PT-BR first
+            const resPt = await fetch(`${TMDB_BASE}/tv/${item.id}?language=pt-BR`, { headers: tmdbHeaders });
+            if (resPt.ok) {
+              const dataPt = await resPt.json();
+              if (dataPt.name && dataPt.name !== item.original_name) {
+                item.name = dataPt.name;
+                return;
+              }
+            }
+            // Fallback to English
+            const resEn = await fetch(`${TMDB_BASE}/tv/${item.id}?language=en-US`, { headers: tmdbHeaders });
+            if (resEn.ok) {
+              const dataEn = await resEn.json();
+              if (dataEn.name) item.name = dataEn.name;
+            }
+          } catch {}
+        })
+      );
+    }
+  }
+
+  // Also enrich items that already have pt-BR name but might have better overview
+  const needsOverview = allItems.filter(i => !i.overview || i.overview.length < 10);
+  if (needsOverview.length > 0) {
+    for (let i = 0; i < needsOverview.length; i += 5) {
+      const batch = needsOverview.slice(i, i + 5);
+      await Promise.allSettled(
+        batch.map(async (item: any) => {
+          try {
+            const res = await fetch(`${TMDB_BASE}/tv/${item.id}?language=pt-BR`, { headers: tmdbHeaders });
             if (res.ok) {
               const data = await res.json();
-              if (data.name && data.name !== item.original_name) {
-                item.name = data.name; // Use English name as fallback
+              if (data.overview && data.overview.length > 10) {
+                item.overview = data.overview;
               }
+              if (data.name && data.name !== item.original_name) {
+                item.name = data.name;
+              }
+              if (data.number_of_seasons) item.number_of_seasons = data.number_of_seasons;
+              if (data.number_of_episodes) item.number_of_episodes = data.number_of_episodes;
             }
           } catch {}
         })
@@ -221,9 +259,9 @@ async function handleDoramaImport(
     backdrop_path: item.backdrop_path || null,
     release_date: sanitizeDate(item.first_air_date),
     vote_average: item.vote_average || 0,
-    number_of_seasons: null,
-    number_of_episodes: null,
-    status: "published",
+    number_of_seasons: item.number_of_seasons || null,
+    number_of_episodes: item.number_of_episodes || null,
+    status: (item.overview && item.overview.length > 10) ? "published" : "draft",
     featured: false,
     audio_type: ["legendado"],
     created_by: userId,
