@@ -1,9 +1,9 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { Film, Tv, Sparkles, Drama, Eye, TrendingUp, BarChart3, PieChart as PieChartIcon } from "lucide-react";
+import { Film, Tv, Sparkles, Drama, Eye, TrendingUp, BarChart3, PieChart as PieChartIcon, Users, Activity, Globe, Clock } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, AreaChart, Area, CartesianGrid } from "recharts";
 
-const COLORS = ["hsl(217, 91%, 60%)", "hsl(250, 80%, 60%)", "hsl(160, 60%, 50%)", "hsl(340, 70%, 55%)"];
+const COLORS = ["hsl(217, 91%, 60%)", "hsl(250, 80%, 60%)", "hsl(160, 60%, 50%)", "hsl(340, 70%, 55%)", "hsl(30, 80%, 55%)"];
 
 const Dashboard = () => {
   const [counts, setCounts] = useState({ movies: 0, series: 0, doramas: 0, animes: 0 });
@@ -13,13 +13,62 @@ const Dashboard = () => {
   const [viewsByType, setViewsByType] = useState<{ name: string; value: number }[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const processVisitorData = (visitorData: any[]) => {
-    // Unique visitors count
+  // Real-time monitoring
+  const [onlineNow, setOnlineNow] = useState(0);
+  const [todayVisitors, setTodayVisitors] = useState(0);
+  const [todayViews, setTodayViews] = useState(0);
+  const [recentVisitors, setRecentVisitors] = useState<any[]>([]);
+  const [viewsPerHour, setViewsPerHour] = useState<{ hour: string; views: number }[]>([]);
+
+  const processVisitorData = useCallback((visitorData: any[]) => {
     const uniqueIds = new Set(visitorData.map((v: any) => v.visitor_id));
     setUniqueVisitors(uniqueIds.size);
 
-    // Views by day (last 7 days)
     const now = new Date();
+    const todayStr = now.toISOString().split("T")[0];
+
+    // Today's unique visitors
+    const todaySet = new Set<string>();
+    let todayViewCount = 0;
+    visitorData.forEach((v: any) => {
+      if (v.visited_at?.startsWith(todayStr)) {
+        todaySet.add(v.visitor_id);
+        todayViewCount++;
+      }
+    });
+    setTodayVisitors(todaySet.size);
+    setTodayViews(todayViewCount);
+
+    // Online now (last 5 min)
+    const fiveMinAgo = new Date(now.getTime() - 5 * 60 * 1000);
+    const onlineSet = new Set<string>();
+    visitorData.forEach((v: any) => {
+      if (new Date(v.visited_at) >= fiveMinAgo) onlineSet.add(v.visitor_id);
+    });
+    setOnlineNow(onlineSet.size);
+
+    // Recent visitors (last 10)
+    const sorted = [...visitorData]
+      .filter((v) => v.visited_at?.startsWith(todayStr))
+      .sort((a, b) => new Date(b.visited_at).getTime() - new Date(a.visited_at).getTime())
+      .slice(0, 12);
+    setRecentVisitors(sorted);
+
+    // Views by hour (today)
+    const hourMap: Record<string, number> = {};
+    for (let h = 0; h <= now.getHours(); h++) {
+      hourMap[`${h.toString().padStart(2, "0")}h`] = 0;
+    }
+    visitorData.forEach((v: any) => {
+      if (v.visited_at?.startsWith(todayStr)) {
+        const h = new Date(v.visited_at).getHours();
+        const key = `${h.toString().padStart(2, "0")}h`;
+        if (hourMap[key] !== undefined) hourMap[key]++;
+      }
+    });
+    setViewsPerHour(Object.entries(hourMap).map(([hour, views]) => ({ hour, views })));
+
+    // Views by day (last 7 days)
     const dayMap: Record<string, Set<string>> = {};
     for (let i = 6; i >= 0; i--) {
       const d = new Date(now);
@@ -49,7 +98,7 @@ const Dashboard = () => {
     });
     const vbt = Object.entries(typeMap).map(([name, set]) => ({ name, value: set.size }));
     setViewsByType(vbt.length ? vbt : [{ name: "Sem dados", value: 0 }]);
-  };
+  }, []);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -60,7 +109,7 @@ const Dashboard = () => {
           supabase.from("content").select("id", { count: "exact", head: true }).eq("content_type", "dorama"),
           supabase.from("content").select("id", { count: "exact", head: true }).eq("content_type", "anime"),
           supabase.from("content").select("id, title, poster_path, content_type, created_at").order("created_at", { ascending: false }).limit(5),
-          supabase.from("site_visitors").select("visitor_id, visited_at, pathname").eq("hostname", "lyneflix.online"),
+          supabase.from("site_visitors").select("visitor_id, visited_at, pathname, hostname").eq("hostname", "lyneflix.online"),
         ]);
 
         setCounts({
@@ -79,25 +128,36 @@ const Dashboard = () => {
     };
     fetchData();
 
-    // Realtime subscription for live visitor updates
+    // Realtime subscription
     const channel = supabase
-      .channel("dashboard-visitors")
+      .channel("dashboard-visitors-rt")
       .on("postgres_changes", {
         event: "INSERT",
         schema: "public",
         table: "site_visitors",
       }, async () => {
-        // Refetch visitors on new entry
         const { data } = await supabase
           .from("site_visitors")
-          .select("visitor_id, visited_at, pathname")
+          .select("visitor_id, visited_at, pathname, hostname")
           .eq("hostname", "lyneflix.online");
         if (data) processVisitorData(data);
       })
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
-  }, []);
+    // Auto-refresh online count every 30s
+    const interval = setInterval(async () => {
+      const { data } = await supabase
+        .from("site_visitors")
+        .select("visitor_id, visited_at, pathname, hostname")
+        .eq("hostname", "lyneflix.online");
+      if (data) processVisitorData(data);
+    }, 30000);
+
+    return () => {
+      supabase.removeChannel(channel);
+      clearInterval(interval);
+    };
+  }, [processVisitorData]);
 
   const statCards = useMemo(() => [
     { label: "Filmes", value: counts.movies, icon: Film, color: "text-blue-400", bg: "bg-blue-400/10" },
@@ -105,6 +165,21 @@ const Dashboard = () => {
     { label: "Doramas", value: counts.doramas, icon: Drama, color: "text-emerald-400", bg: "bg-emerald-400/10" },
     { label: "Animes", value: counts.animes, icon: Sparkles, color: "text-pink-400", bg: "bg-pink-400/10" },
   ], [counts]);
+
+  const formatTime = (d: string) => {
+    const date = new Date(d);
+    return date.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  };
+
+  const getPageLabel = (pathname: string | null) => {
+    if (!pathname || pathname === "/") return "Home";
+    if (pathname.startsWith("/filme")) return "Filme";
+    if (pathname.startsWith("/serie")) return "Série";
+    if (pathname.startsWith("/player")) return "Player";
+    if (pathname.startsWith("/dorama")) return "Dorama";
+    if (pathname.startsWith("/conta")) return "Conta";
+    return pathname.slice(1, 15);
+  };
 
   if (loading) {
     return (
@@ -118,10 +193,57 @@ const Dashboard = () => {
     <div className="space-y-6">
       <div>
         <h1 className="font-display text-2xl font-bold">Dashboard</h1>
-        <p className="text-sm text-muted-foreground mt-1">Visão geral do seu catálogo • Visitantes em tempo real</p>
+        <p className="text-sm text-muted-foreground mt-1">Monitoramento em tempo real • Métricas de divulgação</p>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+      {/* Live monitoring row */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="glass p-4 flex items-center gap-3 relative overflow-hidden">
+          <div className="absolute top-2 right-2">
+            <span className="flex h-2.5 w-2.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+            </span>
+          </div>
+          <div className="w-11 h-11 rounded-xl bg-emerald-400/10 flex items-center justify-center flex-shrink-0">
+            <Activity className="w-5 h-5 text-emerald-400" />
+          </div>
+          <div>
+            <p className="text-2xl font-bold font-display text-emerald-400">{onlineNow}</p>
+            <p className="text-[10px] text-muted-foreground">Online agora</p>
+          </div>
+        </div>
+        <div className="glass p-4 flex items-center gap-3">
+          <div className="w-11 h-11 rounded-xl bg-blue-400/10 flex items-center justify-center flex-shrink-0">
+            <Users className="w-5 h-5 text-blue-400" />
+          </div>
+          <div>
+            <p className="text-2xl font-bold font-display">{todayVisitors}</p>
+            <p className="text-[10px] text-muted-foreground">Visitantes hoje</p>
+          </div>
+        </div>
+        <div className="glass p-4 flex items-center gap-3">
+          <div className="w-11 h-11 rounded-xl bg-purple-400/10 flex items-center justify-center flex-shrink-0">
+            <Globe className="w-5 h-5 text-purple-400" />
+          </div>
+          <div>
+            <p className="text-2xl font-bold font-display">{todayViews}</p>
+            <p className="text-[10px] text-muted-foreground">Pageviews hoje</p>
+          </div>
+        </div>
+        <div className="glass p-4 flex items-center gap-3">
+          <div className="w-11 h-11 rounded-xl bg-amber-400/10 flex items-center justify-center flex-shrink-0">
+            <Eye className="w-5 h-5 text-amber-400" />
+          </div>
+          <div>
+            <p className="text-2xl font-bold font-display">{uniqueVisitors}</p>
+            <p className="text-[10px] text-muted-foreground">Total únicos</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Catalog stats */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {statCards.map((card) => (
           <div key={card.label} className="glass p-4 flex items-center gap-4">
             <div className={`w-11 h-11 rounded-xl ${card.bg} flex items-center justify-center flex-shrink-0`}>
@@ -133,34 +255,37 @@ const Dashboard = () => {
             </div>
           </div>
         ))}
-        <div className="glass p-4 flex items-center gap-4 relative overflow-hidden">
-          <div className="absolute top-2 right-2">
-            <span className="flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-            </span>
-          </div>
-          <div className="w-11 h-11 rounded-xl bg-amber-400/10 flex items-center justify-center flex-shrink-0">
-            <Eye className="w-5 h-5 text-amber-400" />
-          </div>
-          <div>
-            <p className="text-2xl font-bold font-display">{uniqueVisitors}</p>
-            <p className="text-xs text-muted-foreground">Visitantes únicos</p>
-          </div>
-        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Hourly traffic today */}
         <div className="glass p-5">
           <div className="flex items-center gap-2 mb-4">
-            <TrendingUp className="w-4 h-4 text-primary" />
-            <h3 className="font-display font-semibold text-sm">Visitantes únicos (7 dias)</h3>
+            <Clock className="w-4 h-4 text-primary" />
+            <h3 className="font-display font-semibold text-sm">Tráfego por hora (hoje)</h3>
             <span className="ml-auto flex h-2 w-2">
               <span className="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-emerald-400 opacity-75"></span>
               <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
             </span>
           </div>
-          <ResponsiveContainer width="100%" height={220}>
+          <ResponsiveContainer width="100%" height={200}>
+            <BarChart data={viewsPerHour}>
+              <CartesianGrid strokeDasharray="3 3" stroke="hsl(220, 20%, 18%)" />
+              <XAxis dataKey="hour" tick={{ fill: "hsl(215, 20%, 55%)", fontSize: 10 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fill: "hsl(215, 20%, 55%)", fontSize: 10 }} axisLine={false} tickLine={false} />
+              <Tooltip contentStyle={{ background: "hsl(220, 25%, 13%)", border: "1px solid hsl(220, 20%, 18%)", borderRadius: "12px", fontSize: "12px" }} />
+              <Bar dataKey="views" radius={[4, 4, 0, 0]} fill="hsl(217, 91%, 60%)" />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* 7-day trend */}
+        <div className="glass p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <TrendingUp className="w-4 h-4 text-primary" />
+            <h3 className="font-display font-semibold text-sm">Visitantes únicos (7 dias)</h3>
+          </div>
+          <ResponsiveContainer width="100%" height={200}>
             <AreaChart data={viewsByDay}>
               <defs>
                 <linearGradient id="colorViews" x1="0" y1="0" x2="0" y2="1">
@@ -177,37 +302,42 @@ const Dashboard = () => {
           </ResponsiveContainer>
         </div>
 
+        {/* Live feed */}
         <div className="glass p-5">
           <div className="flex items-center gap-2 mb-4">
-            <BarChart3 className="w-4 h-4 text-primary" />
-            <h3 className="font-display font-semibold text-sm">Conteúdo por Tipo</h3>
+            <Activity className="w-4 h-4 text-emerald-400" />
+            <h3 className="font-display font-semibold text-sm">Feed ao vivo</h3>
+            <span className="ml-auto text-[10px] text-emerald-400 font-medium">LIVE</span>
           </div>
-          <ResponsiveContainer width="100%" height={220}>
-            <BarChart data={[
-              { name: "Filmes", value: counts.movies },
-              { name: "Séries", value: counts.series },
-              { name: "Doramas", value: counts.doramas },
-              { name: "Animes", value: counts.animes },
-            ]}>
-              <CartesianGrid strokeDasharray="3 3" stroke="hsl(220, 20%, 18%)" />
-              <XAxis dataKey="name" tick={{ fill: "hsl(215, 20%, 55%)", fontSize: 11 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: "hsl(215, 20%, 55%)", fontSize: 11 }} axisLine={false} tickLine={false} />
-              <Tooltip contentStyle={{ background: "hsl(220, 25%, 13%)", border: "1px solid hsl(220, 20%, 18%)", borderRadius: "12px", fontSize: "12px" }} />
-              <Bar dataKey="value" radius={[8, 8, 0, 0]}>
-                {[0, 1, 2, 3].map((i) => <Cell key={i} fill={COLORS[i]} />)}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
+          <div className="space-y-1.5 max-h-[200px] overflow-y-auto">
+            {recentVisitors.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-6">Nenhum visitante hoje</p>
+            ) : (
+              recentVisitors.map((v: any, i: number) => (
+                <div key={i} className="flex items-center gap-2 py-1.5 px-2 rounded-lg bg-white/[0.02] text-xs">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 flex-shrink-0" />
+                  <span className="text-muted-foreground font-mono">{formatTime(v.visited_at)}</span>
+                  <span className="px-1.5 py-0.5 rounded bg-primary/10 text-primary text-[10px] font-medium">
+                    {getPageLabel(v.pathname)}
+                  </span>
+                  <span className="text-muted-foreground/50 truncate ml-auto font-mono text-[10px]">
+                    {v.visitor_id?.slice(0, 8)}
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
         </div>
 
+        {/* Content by type + Pie */}
         <div className="glass p-5">
           <div className="flex items-center gap-2 mb-4">
             <PieChartIcon className="w-4 h-4 text-primary" />
             <h3 className="font-display font-semibold text-sm">Visitantes por Seção</h3>
           </div>
-          <ResponsiveContainer width="100%" height={220}>
+          <ResponsiveContainer width="100%" height={200}>
             <PieChart>
-              <Pie data={viewsByType} cx="50%" cy="50%" innerRadius={50} outerRadius={80} dataKey="value" label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>
+              <Pie data={viewsByType} cx="50%" cy="50%" innerRadius={45} outerRadius={75} dataKey="value" label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>
                 {viewsByType.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
               </Pie>
               <Tooltip contentStyle={{ background: "hsl(220, 25%, 13%)", border: "1px solid hsl(220, 20%, 18%)", borderRadius: "12px", fontSize: "12px" }} />
@@ -215,14 +345,15 @@ const Dashboard = () => {
           </ResponsiveContainer>
         </div>
 
-        <div className="glass p-5">
+        {/* Recent content */}
+        <div className="glass p-5 lg:col-span-2">
           <div className="flex items-center gap-2 mb-4">
             <Film className="w-4 h-4 text-primary" />
             <h3 className="font-display font-semibold text-sm">Adicionados Recentemente</h3>
           </div>
-          <div className="space-y-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             {recentContent.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-8">Nenhum conteúdo adicionado ainda</p>
+              <p className="text-sm text-muted-foreground text-center py-8 col-span-2">Nenhum conteúdo adicionado ainda</p>
             ) : (
               recentContent.map((item: any) => (
                 <div key={item.id} className="flex items-center gap-3 p-2.5 rounded-xl bg-white/[0.03]">
