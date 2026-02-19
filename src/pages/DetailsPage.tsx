@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Play, Star, Clock, Calendar, Users, Tv, List, MessageSquare, Flag, Share2, BookmarkPlus, BookmarkCheck, TimerIcon } from "lucide-react";
-import { addToMyList, removeFromMyList, isInMyList } from "@/lib/myList";
+
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import ContentRow from "@/components/ContentRow";
@@ -59,10 +59,17 @@ const DetailsPage = ({ type }: DetailsPageProps) => {
   }, []);
 
   useEffect(() => {
-    if (detail) {
-      setInMyList(isInMyList(detail.id, type));
+    if (detail && activeProfileId) {
+      supabase
+        .from("my_list")
+        .select("id")
+        .eq("profile_id", activeProfileId)
+        .eq("tmdb_id", detail.id)
+        .eq("content_type", type)
+        .maybeSingle()
+        .then(({ data }) => setInMyList(!!data));
     }
-  }, [detail, type]);
+  }, [detail, type, activeProfileId]);
 
   useEffect(() => {
     setLoading(true);
@@ -315,21 +322,30 @@ const DetailsPage = ({ type }: DetailsPageProps) => {
                 onClick={async () => {
                   // Check if logged in
                   const { data: { session } } = await supabase.auth.getSession();
-                  if (!session) {
+                  if (!session || !activeProfileId) {
                     setShowLoginModal(true);
                     return;
                   }
                   if (inMyList) {
-                    removeFromMyList(detail.id, type);
+                    await supabase
+                      .from("my_list")
+                      .delete()
+                      .eq("profile_id", activeProfileId)
+                      .eq("tmdb_id", detail.id)
+                      .eq("content_type", type);
                     setInMyList(false);
                   } else {
-                    addToMyList({
-                      tmdb_id: detail.id,
-                      content_type: type,
-                      title: getDisplayTitle(detail),
-                      poster_path: detail.poster_path,
-                    });
-                    setInMyList(true);
+                    const { error } = await supabase.from("my_list").upsert(
+                      {
+                        profile_id: activeProfileId,
+                        tmdb_id: detail.id,
+                        content_type: type,
+                        title: getDisplayTitle(detail),
+                        poster_path: detail.poster_path,
+                      },
+                      { onConflict: "profile_id,tmdb_id,content_type" }
+                    );
+                    if (!error) setInMyList(true);
                   }
                 }}
                 className={`flex items-center gap-2 px-4 sm:px-5 py-2.5 sm:py-3 rounded-xl sm:rounded-2xl glass glass-hover font-semibold text-xs sm:text-sm ${inMyList ? "text-primary" : ""}`}
