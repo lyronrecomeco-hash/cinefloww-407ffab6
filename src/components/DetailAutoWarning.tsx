@@ -8,28 +8,28 @@ const WARNINGS = [
     title: "🆕 Site em construção",
     message: "A LyneFlix está adicionando conteúdos diariamente.\n\nSe este título não carregar, pode reportar — nossa equipe resolve rápido!",
     button_text: "Entendi",
-    intervalHours: 48,
+    intervalHours: 1,
   },
   {
     id: "report_help",
     title: "🛠️ Ajude a melhorar",
     message: "Episódio cortado, player lento ou não carrega?\n\nUse o botão 'Reportar' abaixo para nossa equipe corrigir com prioridade.",
     button_text: "Ok, entendi",
-    intervalHours: 72,
+    intervalHours: 1,
   },
   {
     id: "player_issues",
     title: "⚠️ Player não carregou?",
     message: "Nossa equipe está trabalhando nos conteúdos constantemente.\n\nSe o filme ou série não abrir, pode reportar! Devido à equipe estar atualizando, pode ocorrer de o player não carregar temporariamente.",
     button_text: "Tudo bem",
-    intervalHours: 96,
+    intervalHours: 1,
   },
   {
     id: "episode_missing",
     title: "🎬 Episódio com minutos faltando?",
     message: "Percebeu que o episódio está cortado ou com minutos faltando?\n\nReporte para nossa equipe resolver com urgência! Estamos corrigindo todos os conteúdos o mais rápido possível.",
     button_text: "Vou reportar",
-    intervalHours: 120,
+    intervalHours: 1,
   },
 ];
 
