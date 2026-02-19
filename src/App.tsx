@@ -20,6 +20,9 @@ const DmcaPage = lazy(() => import("./pages/DmcaPage"));
 const TermsPage = lazy(() => import("./pages/TermsPage"));
 const DadosPage = lazy(() => import("./pages/DadosPage"));
 const MyListPage = lazy(() => import("./pages/MyListPage"));
+const AuthPage = lazy(() => import("./pages/AuthPage"));
+const ProfileSelector = lazy(() => import("./pages/ProfileSelector"));
+const ImportListPage = lazy(() => import("./pages/ImportListPage"));
 
 // Admin (lazy loaded)
 const AdminLogin = lazy(() => import("./pages/AdminLogin"));
@@ -36,7 +39,7 @@ const LogsPage = lazy(() => import("./pages/admin/LogsPage"));
 const SecurityMonitor = lazy(() => import("./pages/admin/SecurityMonitor"));
 const TelegramPage = lazy(() => import("./pages/admin/TelegramPage"));
 const ReportsPage = lazy(() => import("./pages/admin/ReportsPage"));
-// TVManager removed
+const UsersPage = lazy(() => import("./pages/admin/UsersPage"));
 
 
 const queryClient = new QueryClient({
@@ -81,6 +84,9 @@ const App = () => (
             <Route path="/dmca" element={<DmcaPage />} />
             <Route path="/termos" element={<TermsPage />} />
             <Route path="/dados" element={<DadosPage />} />
+            <Route path="/conta" element={<AuthPage />} />
+            <Route path="/perfis" element={<ProfileSelector />} />
+            <Route path="/importar-lista" element={<ImportListPage />} />
 
             {/* API redirects */}
             <Route path="/api/:type/:id" element={<ApiRedirect />} />
@@ -103,8 +109,8 @@ const App = () => (
               <Route path="seguranca" element={<SecurityMonitor />} />
               <Route path="avisos" element={<AlertsPage />} />
               <Route path="telegram" element={<TelegramPage />} />
+              <Route path="usuarios" element={<UsersPage />} />
               <Route path="config" element={<SettingsPage />} />
-              
             </Route>
 
             <Route path="*" element={<NotFound />} />

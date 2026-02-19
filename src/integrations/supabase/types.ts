@@ -44,6 +44,36 @@ export type Database = {
         }
         Relationships: []
       }
+      auth_audit_log: {
+        Row: {
+          created_at: string
+          event: string
+          id: string
+          ip_hash: string | null
+          metadata: Json | null
+          user_agent: string | null
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          event: string
+          id?: string
+          ip_hash?: string | null
+          metadata?: Json | null
+          user_agent?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          event?: string
+          id?: string
+          ip_hash?: string | null
+          metadata?: Json | null
+          user_agent?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       categories: {
         Row: {
           created_at: string
@@ -284,6 +314,92 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      my_list: {
+        Row: {
+          added_at: string
+          content_type: string
+          id: string
+          poster_path: string | null
+          profile_id: string
+          title: string
+          tmdb_id: number
+        }
+        Insert: {
+          added_at?: string
+          content_type: string
+          id?: string
+          poster_path?: string | null
+          profile_id: string
+          title: string
+          tmdb_id: number
+        }
+        Update: {
+          added_at?: string
+          content_type?: string
+          id?: string
+          poster_path?: string | null
+          profile_id?: string
+          title?: string
+          tmdb_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "my_list_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          avatar_url: string | null
+          ban_reason: string | null
+          banned: boolean | null
+          banned_at: string | null
+          created_at: string
+          display_name: string | null
+          email: string
+          id: string
+          ip_hash: string | null
+          last_login_at: string | null
+          login_count: number | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          avatar_url?: string | null
+          ban_reason?: string | null
+          banned?: boolean | null
+          banned_at?: string | null
+          created_at?: string
+          display_name?: string | null
+          email: string
+          id?: string
+          ip_hash?: string | null
+          last_login_at?: string | null
+          login_count?: number | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          avatar_url?: string | null
+          ban_reason?: string | null
+          banned?: boolean | null
+          banned_at?: string | null
+          created_at?: string
+          display_name?: string | null
+          email?: string
+          id?: string
+          ip_hash?: string | null
+          last_login_at?: string | null
+          login_count?: number | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
       }
       resolve_failures: {
         Row: {
@@ -621,6 +737,39 @@ export type Database = {
           sort_order?: number
           stream_url?: string
           updated_at?: string
+        }
+        Relationships: []
+      }
+      user_profiles: {
+        Row: {
+          avatar_index: number | null
+          created_at: string
+          id: string
+          is_default: boolean | null
+          name: string
+          share_code: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          avatar_index?: number | null
+          created_at?: string
+          id?: string
+          is_default?: boolean | null
+          name: string
+          share_code?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          avatar_index?: number | null
+          created_at?: string
+          id?: string
+          is_default?: boolean | null
+          name?: string
+          share_code?: string | null
+          updated_at?: string
+          user_id?: string
         }
         Relationships: []
       }

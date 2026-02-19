@@ -3,7 +3,7 @@ import { useNavigate, useLocation, Outlet } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import {
   LayoutDashboard, Film, Tv, Sparkles, Drama, FolderOpen, ScrollText,
-  Settings, LogOut, Menu, X, ChevronRight, MonitorPlay, Database, MessageSquare, Bell, Shield, Bot, Flag, Radio
+  Settings, LogOut, Menu, X, ChevronRight, MonitorPlay, Database, MessageSquare, Bell, Shield, Bot, Flag, Radio, Users
 } from "lucide-react";
 
 const menuItems = [
@@ -20,6 +20,7 @@ const menuItems = [
   { label: "Logs", path: "/admin/logs", icon: ScrollText },
   { label: "Segurança", path: "/admin/seguranca", icon: Shield },
   { label: "Bot Telegram", path: "/admin/telegram", icon: Bot },
+  { label: "Usuários", path: "/admin/usuarios", icon: Users },
   { label: "Avisos", path: "/admin/avisos", icon: Bell },
   { label: "Configurações", path: "/admin/config", icon: Settings },
 ];
