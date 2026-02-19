@@ -101,37 +101,29 @@ const PlayerPage = () => {
   }, [params.id, params.type, audioParam, imdbId, season, episode]);
 
   const isLiveTV = !!tvChannelId;
+  const [tvIframeUrl, setTvIframeUrl] = useState<string | null>(null);
 
-  // TV channel extraction — use HTTPS URL directly (no token proxy for live)
+  // TV channel — use iframe embed directly (CloudFront CDN blocks direct m3u8 access)
   useEffect(() => {
     if (!tvChannelId) return;
     setBankLoading(true);
     let cancelled = false;
     const load = async () => {
       try {
-        const { data, error } = await supabase.functions.invoke("extract-tv", {
-          body: { channel_id: tvChannelId },
-        });
+        // Get channel info from DB
+        const { data: channel } = await supabase
+          .from("tv_channels")
+          .select("name, stream_url")
+          .eq("id", tvChannelId)
+          .eq("active", true)
+          .single();
+        
         if (cancelled) return;
-        console.log("[TV] extract-tv response:", data, error);
-        if (data?.channel_name) setBankTitle(data.channel_name);
-        if (data?.url && data.type !== "iframe") {
-          // Use HTTPS URL directly — no proxy needed for live streams
-          // The edge function already converts HTTP→HTTPS
-          setBankSources([{
-            url: data.url,
-            quality: "live",
-            provider: data.provider || "tv",
-            type: data.type === "mp4" ? "mp4" : "m3u8",
-          }]);
-        } else if (data?.url) {
-          // Iframe fallback — embed directly
-          setBankSources([{
-            url: data.url,
-            quality: "live",
-            provider: "tv-iframe",
-            type: "m3u8",
-          }]);
+        
+        if (channel) {
+          setBankTitle(channel.name);
+          // Use the embed URL directly in an iframe — CDN blocks direct m3u8 access
+          setTvIframeUrl(channel.stream_url);
         }
       } catch (err) {
         console.error("[TV] Error loading channel:", err);
@@ -530,18 +522,32 @@ const PlayerPage = () => {
     <div ref={containerRef} className="fixed inset-0 z-[100] bg-black group"
       onMouseMove={resetControlsTimer} onTouchStart={resetControlsTimer}
       onClick={(e) => {
+        if (isLiveTV && tvIframeUrl) return; // Don't interfere with iframe
         const target = e.target as HTMLElement;
-        if (target.closest('button') || target.closest('input') || target.closest('[data-controls]')) return;
+        if (target.closest('button') || target.closest('input') || target.closest('[data-controls]') || target.closest('iframe')) return;
         togglePlay();
       }}
       onDoubleClick={(e) => {
+        if (isLiveTV && tvIframeUrl) return;
         const target = e.target as HTMLElement;
-        if (target.closest('button') || target.closest('input') || target.closest('[data-controls]')) return;
+        if (target.closest('button') || target.closest('input') || target.closest('[data-controls]') || target.closest('iframe')) return;
         toggleFullscreen();
       }}
       style={{ cursor: showControls ? "default" : "none" }}>
-      <video ref={videoRef} className="w-full h-full object-contain" playsInline
-        preload="auto" />
+      
+      {/* Live TV uses iframe embed (CDN blocks direct m3u8) */}
+      {isLiveTV && tvIframeUrl ? (
+        <iframe
+          src={tvIframeUrl}
+          className="w-full h-full border-0"
+          allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
+          allowFullScreen
+          referrerPolicy="no-referrer"
+        />
+      ) : (
+        <video ref={videoRef} className="w-full h-full object-contain" playsInline
+          preload="auto" />
+      )}
 
       {/* Resume prompt */}
       {showResumePrompt && (
@@ -562,7 +568,7 @@ const PlayerPage = () => {
       )}
 
       {/* Loading - LYNEFLIX branded */}
-      {(loading || bankLoading) && !error && (
+      {(loading || bankLoading) && !error && !(isLiveTV && tvIframeUrl) && (
         <div className="absolute inset-0 flex items-center justify-center z-10 bg-black">
           <div className="flex flex-col items-center gap-6">
             <div className="lyneflix-loader">
@@ -580,7 +586,7 @@ const PlayerPage = () => {
       )}
 
       {/* Error - Friendly modal */}
-      {(error || (!bankLoading && !loading && sources.length === 0)) && (
+      {(error || (!bankLoading && !loading && sources.length === 0 && !(isLiveTV && tvIframeUrl))) && (
         <div className="absolute inset-0 flex items-center justify-center bg-black z-20">
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-[0.03]">
             <span className="text-[100px] sm:text-[140px] font-black tracking-wider text-white select-none">LYNEFLIX</span>
@@ -628,7 +634,20 @@ const PlayerPage = () => {
         </div>
       )}
 
-      {/* Controls */}
+      {/* Controls - hide full controls for live TV iframe, show only back button */}
+      {isLiveTV && tvIframeUrl ? (
+        <div className="absolute top-0 left-0 right-0 z-20 p-3 sm:p-4 pointer-events-none">
+          <div className="flex items-center gap-3 pointer-events-auto w-fit">
+            <button onClick={goBack} className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-black/60 backdrop-blur-sm flex items-center justify-center hover:bg-black/80 transition-colors">
+              <ArrowLeft className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
+            </button>
+            <div className="bg-black/60 backdrop-blur-sm rounded-xl px-3 py-1.5 flex items-center gap-2">
+              <span className="relative flex h-2 w-2"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75"></span><span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span></span>
+              <span className="text-white text-xs sm:text-sm font-semibold">{bankTitle}</span>
+            </div>
+          </div>
+        </div>
+      ) : (
       <div data-controls className={`absolute inset-0 z-10 transition-opacity duration-500 ${showControls ? "opacity-100" : "opacity-0 pointer-events-none"}`}>
         {/* Top */}
         <div className="absolute top-0 left-0 right-0 h-24 sm:h-28 bg-gradient-to-b from-black/80 via-black/40 to-transparent">
@@ -771,6 +790,7 @@ const PlayerPage = () => {
           </div>
         </div>
       </div>
+      )}
     </div>
   );
 };
