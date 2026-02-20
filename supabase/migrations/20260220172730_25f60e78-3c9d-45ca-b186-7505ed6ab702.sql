@@ -1,0 +1,1 @@
+ALTER TABLE public.discord_config ADD COLUMN IF NOT EXISTS webhook_url text;
