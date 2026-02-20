@@ -85,7 +85,7 @@ export interface TMDBList {
 }
 
 // Endpoints
-export const getTrending = (page = 1) => fetchTMDB<TMDBList>("/trending/all/week", { page: String(page) });
+export const getTrending = (page = 1) => fetchTMDB<TMDBList>("/trending/all/day", { page: String(page) });
 export const getPopularMovies = (page = 1, genreId?: number) => {
   const params: Record<string, string> = { page: String(page) };
   if (genreId) params.with_genres = String(genreId);
@@ -102,6 +102,10 @@ export const getNowPlayingMovies = (page = 1) => fetchTMDB<TMDBList>("/movie/now
 export const getAiringTodaySeries = (page = 1) => fetchTMDB<TMDBList>("/tv/airing_today", { page: String(page) });
 export const getUpcomingMovies = (page = 1) => fetchTMDB<TMDBList>("/movie/upcoming", { page: String(page) });
 export const getOnTheAirSeries = (page = 1) => fetchTMDB<TMDBList>("/tv/on_the_air", { page: String(page) });
+export const discoverMovies = (page = 1, params: Record<string, string> = {}) =>
+  fetchTMDB<TMDBList>("/discover/movie", { page: String(page), ...params });
+export const discoverSeries = (page = 1, params: Record<string, string> = {}) =>
+  fetchTMDB<TMDBList>("/discover/tv", { page: String(page), ...params });
 
 export const getMovieDetails = (id: number) =>
   fetchTMDB<TMDBMovieDetail>(`/movie/${id}`, { append_to_response: "credits,similar,videos,images" });
