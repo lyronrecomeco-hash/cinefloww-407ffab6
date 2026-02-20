@@ -20,7 +20,19 @@ const ComingSoonPage = () => {
     setLoading(true);
     try {
       const data = tab === "movies" ? await getUpcomingMovies(p) : await getOnTheAirSeries(p);
-      setItems(data.results);
+      const today = new Date().toISOString().split("T")[0];
+      // Only future releases, sorted by closest date first
+      const future = data.results
+        .filter((item) => {
+          const d = item.release_date || item.first_air_date;
+          return d && d >= today && item.poster_path;
+        })
+        .sort((a, b) => {
+          const da = a.release_date || a.first_air_date || "";
+          const db = b.release_date || b.first_air_date || "";
+          return da.localeCompare(db);
+        });
+      setItems(future);
       setTotalPages(Math.min(data.total_pages, 500));
       setPage(p);
     } catch { /* ignore */ }
