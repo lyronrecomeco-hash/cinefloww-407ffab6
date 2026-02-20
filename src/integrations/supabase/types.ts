@@ -355,6 +355,7 @@ export type Database = {
           notification_channel_id: string | null
           site_url: string | null
           updated_at: string
+          webhook_url: string | null
           welcome_message: string | null
         }
         Insert: {
@@ -366,6 +367,7 @@ export type Database = {
           notification_channel_id?: string | null
           site_url?: string | null
           updated_at?: string
+          webhook_url?: string | null
           welcome_message?: string | null
         }
         Update: {
@@ -377,6 +379,7 @@ export type Database = {
           notification_channel_id?: string | null
           site_url?: string | null
           updated_at?: string
+          webhook_url?: string | null
           welcome_message?: string | null
         }
         Relationships: []

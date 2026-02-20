@@ -203,20 +203,30 @@ async function sendReleaseNotification() {
 
   const content = `${titleLine}${directorLine}${castLine}${genresLine}${synopsisLine}${linkLine}${footerLine}`;
 
-  // Use backdrop for wide image, fallback to poster
-  const imageUrl = item.backdrop_path 
-    ? `https://image.tmdb.org/t/p/w780${item.backdrop_path}` 
-    : item.poster_path 
-      ? `https://image.tmdb.org/t/p/w500${item.poster_path}` 
-      : undefined;
+  // Use POSTER (capa vertical) as main image — like movie posters
+  const posterUrl = item.poster_path 
+    ? `https://image.tmdb.org/t/p/w500${item.poster_path}` 
+    : undefined;
 
   const embed = {
     color: 0x8B5CF6,
-    image: imageUrl ? { url: imageUrl } : undefined,
-    thumbnail: item.poster_path ? { url: `https://image.tmdb.org/t/p/w200${item.poster_path}` } : undefined,
+    image: posterUrl ? { url: posterUrl } : undefined,
   };
 
+  // Send via bot API
   await discordApi(`/channels/${config.notification_channel_id}/messages`, "POST", { content, embeds: [embed] });
+  
+  // Also send via webhook if configured
+  if (config.webhook_url) {
+    try {
+      await fetch(config.webhook_url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content, embeds: [embed] }),
+      });
+    } catch (e) { console.error("Webhook error:", e); }
+  }
+  
   await logEvent("release_notified", item.title, { channel_id: config.notification_channel_id });
   return item.title;
 }
