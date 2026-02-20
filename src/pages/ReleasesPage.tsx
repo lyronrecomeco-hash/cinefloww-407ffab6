@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import MovieCard from "@/components/MovieCard";
-import { TMDBMovie, getNowPlayingMovies } from "@/services/tmdb";
+import { TMDBMovie, discoverMovies } from "@/services/tmdb";
 import { Sparkles, ChevronLeft, ChevronRight } from "lucide-react";
 
 const ReleasesPage = () => {
@@ -14,8 +14,12 @@ const ReleasesPage = () => {
   const fetchPage = useCallback(async (p: number) => {
     setLoading(true);
     try {
-      const data = await getNowPlayingMovies(p);
-      setMovies(data.results);
+      const data = await discoverMovies(p, {
+        "primary_release_date.gte": "2026-01-01",
+        "primary_release_date.lte": "2026-12-31",
+        sort_by: "primary_release_date.desc",
+      });
+      setMovies(data.results.filter((m) => m.poster_path));
       setTotalPages(Math.min(data.total_pages, 500));
       setPage(p);
     } catch { /* ignore */ }
@@ -58,8 +62,8 @@ const ReleasesPage = () => {
               <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-primary" />
             </div>
             <div>
-              <h1 className="font-display text-xl sm:text-2xl lg:text-3xl font-bold">Lançamentos</h1>
-              <p className="text-[10px] sm:text-xs text-muted-foreground">Página {page} de {totalPages}</p>
+              <h1 className="font-display text-xl sm:text-2xl lg:text-3xl font-bold">Lançamentos 2026</h1>
+              <p className="text-[10px] sm:text-xs text-muted-foreground">Filmes de 2026 • Página {page} de {totalPages}</p>
             </div>
           </div>
         </div>

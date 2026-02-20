@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
-import { TMDBMovie, getUpcomingMovies, getOnTheAirSeries, posterUrl, getDisplayTitle, getYear } from "@/services/tmdb";
+import { TMDBMovie, discoverMovies, discoverSeries, posterUrl, getDisplayTitle } from "@/services/tmdb";
 import { Calendar, Film, Tv, ChevronLeft, ChevronRight } from "lucide-react";
 import { toSlug } from "@/lib/slugify";
 import { useNavigate } from "react-router-dom";
@@ -19,19 +19,20 @@ const ComingSoonPage = () => {
   const fetchPage = useCallback(async (p: number) => {
     setLoading(true);
     try {
-      const data = tab === "movies" ? await getUpcomingMovies(p) : await getOnTheAirSeries(p);
       const today = new Date().toISOString().split("T")[0];
-      // Only future releases, sorted by closest date first
-      const future = data.results
-        .filter((item) => {
-          const d = item.release_date || item.first_air_date;
-          return d && d >= today && item.poster_path;
-        })
-        .sort((a, b) => {
-          const da = a.release_date || a.first_air_date || "";
-          const db = b.release_date || b.first_air_date || "";
-          return da.localeCompare(db);
-        });
+      const futureLimit = "2027-12-31";
+      const data = tab === "movies"
+        ? await discoverMovies(p, {
+            "primary_release_date.gte": today,
+            "primary_release_date.lte": futureLimit,
+            sort_by: "primary_release_date.asc",
+          })
+        : await discoverSeries(p, {
+            "first_air_date.gte": today,
+            "first_air_date.lte": futureLimit,
+            sort_by: "first_air_date.asc",
+          });
+      const future = data.results.filter((item) => item.poster_path);
       setItems(future);
       setTotalPages(Math.min(data.total_pages, 500));
       setPage(p);
