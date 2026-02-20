@@ -12,6 +12,14 @@ import avatar5 from "@/assets/avatars/avatar-5.png";
 import avatar6 from "@/assets/avatars/avatar-6.png";
 import avatar7 from "@/assets/avatars/avatar-7.png";
 import avatar8 from "@/assets/avatars/avatar-8.png";
+import avatar9 from "@/assets/avatars/avatar-9.png";
+import avatar10 from "@/assets/avatars/avatar-10.png";
+import avatar11 from "@/assets/avatars/avatar-11.png";
+import avatar12 from "@/assets/avatars/avatar-12.png";
+import avatar13 from "@/assets/avatars/avatar-13.png";
+import avatar14 from "@/assets/avatars/avatar-14.png";
+import avatar15 from "@/assets/avatars/avatar-15.png";
+import avatar16 from "@/assets/avatars/avatar-16.png";
 import anime1 from "@/assets/avatars/anime-1.png";
 import anime2 from "@/assets/avatars/anime-2.png";
 import anime3 from "@/assets/avatars/anime-3.png";
@@ -21,7 +29,11 @@ import anime6 from "@/assets/avatars/anime-6.png";
 import anime7 from "@/assets/avatars/anime-7.png";
 import anime8 from "@/assets/avatars/anime-8.png";
 
-const AVATARS = [avatar1, avatar2, avatar3, avatar4, avatar5, avatar6, avatar7, avatar8, anime1, anime2, anime3, anime4, anime5, anime6, anime7, anime8];
+const AVATARS = [
+  avatar1, avatar2, avatar3, avatar4, avatar5, avatar6, avatar7, avatar8,
+  anime1, anime2, anime3, anime4, anime5, anime6, anime7, anime8,
+  avatar9, avatar10, avatar11, avatar12, avatar13, avatar14, avatar15, avatar16,
+];
 
 interface UserProfile {
   id: string;
@@ -40,7 +52,7 @@ const ProfileSelector = () => {
   const [newAvatar, setNewAvatar] = useState(0);
   const [mounted, setMounted] = useState(false);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
-  const [avatarTab, setAvatarTab] = useState<"classic" | "anime">("classic");
+  const [avatarTab, setAvatarTab] = useState<"classic" | "anime" | "special">("classic");
   const navigate = useNavigate();
   const { toast } = useToast();
 
@@ -133,7 +145,8 @@ const ProfileSelector = () => {
 
   const classicAvatars = AVATARS.slice(0, 8);
   const animeAvatars = AVATARS.slice(8, 16);
-  const displayAvatars = avatarTab === "classic" ? classicAvatars : animeAvatars;
+  const specialAvatars = AVATARS.slice(16, 24);
+  const displayAvatars = avatarTab === "classic" ? classicAvatars : avatarTab === "anime" ? animeAvatars : specialAvatars;
 
   if (loading && profiles.length === 0) {
     return (
@@ -162,7 +175,7 @@ const ProfileSelector = () => {
           </div>
 
           {/* Tab selector */}
-          <div className="flex justify-center gap-2 mb-4">
+          <div className="flex justify-center gap-2 mb-4 flex-wrap">
             <button
               onClick={() => setAvatarTab("classic")}
               className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all ${
@@ -183,12 +196,22 @@ const ProfileSelector = () => {
             >
               🎌 Anime
             </button>
+            <button
+              onClick={() => setAvatarTab("special")}
+              className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                avatarTab === "special"
+                  ? "bg-primary/20 text-primary border border-primary/30"
+                  : "bg-white/5 text-muted-foreground border border-white/10 hover:bg-white/10"
+              }`}
+            >
+              ✨ Especial
+            </button>
           </div>
 
           {/* Avatar picker */}
           <div className="flex justify-center gap-2 mb-6 flex-wrap">
             {displayAvatars.map((src, i) => {
-              const globalIndex = avatarTab === "classic" ? i : i + 8;
+              const globalIndex = avatarTab === "classic" ? i : avatarTab === "anime" ? i + 8 : i + 16;
               return (
                 <button
                   key={globalIndex}
@@ -277,7 +300,7 @@ const ProfileSelector = () => {
                     setEditing(profile.id);
                     setNewName(profile.name);
                     setNewAvatar(profile.avatar_index);
-                    setAvatarTab(profile.avatar_index >= 8 ? "anime" : "classic");
+                    setAvatarTab(profile.avatar_index >= 16 ? "special" : profile.avatar_index >= 8 ? "anime" : "classic");
                   }}
                   className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-card border border-white/20 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all hover:bg-white/10"
                 >
