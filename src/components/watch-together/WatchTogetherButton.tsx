@@ -1,7 +1,7 @@
 import { useState } from "react";
 import {
   Users, X, MessageCircle, Phone, ArrowLeft, ArrowRight,
-  Copy, Check, Loader2, LogIn, Zap, Share2, Play,
+  Copy, Check, Loader2, LogIn, Zap, Share2, Play, Tv, Shield, Clock,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { createPortal } from "react-dom";
@@ -18,14 +18,16 @@ interface WatchTogetherButtonProps {
   onRoomJoined: (roomCode: string, roomMode?: "chat" | "call") => void;
 }
 
-type Step = "choose" | "create" | "join" | "created";
+type Step = "intro" | "choose" | "create" | "join" | "created";
+
+const INTRO_KEY = "lyneflix_wt_intro_seen";
 
 const WatchTogetherButton = ({
   profileId, tmdbId, contentType, title, posterPath, season, episode, onRoomJoined,
 }: WatchTogetherButtonProps) => {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
-  const [step, setStep] = useState<Step>("choose");
+  const [step, setStep] = useState<Step>("intro");
   const [mode, setMode] = useState<"chat" | "call">("chat");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -36,8 +38,9 @@ const WatchTogetherButton = ({
   const isLoggedIn = !!profileId;
 
   const handleOpen = () => {
+    const seen = localStorage.getItem(INTRO_KEY);
     setOpen(true);
-    setStep("choose");
+    setStep(seen ? "choose" : "intro");
     setError(null);
     setRoomCode(null);
     setJoinCode("");
@@ -46,9 +49,14 @@ const WatchTogetherButton = ({
 
   const handleClose = () => {
     setOpen(false);
-    setStep("choose");
+    setStep("intro");
     setError(null);
     setLoading(false);
+  };
+
+  const handleIntroNext = () => {
+    localStorage.setItem(INTRO_KEY, "1");
+    setStep("choose");
   };
 
   const handleCreate = async () => {
@@ -98,6 +106,7 @@ const WatchTogetherButton = ({
   };
 
   const stepTitle: Record<Step, string> = {
+    intro: "Assistir Junto",
     choose: "Assistir Junto",
     create: "Criar Sala",
     join: "Entrar numa Sala",
@@ -106,13 +115,23 @@ const WatchTogetherButton = ({
 
   const canGoBack = step === "create" || step === "join";
 
+  // Step indicator
+  const getStepIndex = () => {
+    if (step === "intro") return 0;
+    if (step === "choose") return 1;
+    if (step === "create" || step === "join") return 2;
+    if (step === "created") return 3;
+    return 0;
+  };
+  const totalSteps = step === "intro" ? 0 : (step === "created" ? 3 : step === "choose" ? 1 : 2);
+
   const modal = open ? createPortal(
     <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4">
       {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/80 backdrop-blur-xl" onClick={handleClose} />
+      <div className="absolute inset-0 bg-black/85 backdrop-blur-2xl" onClick={handleClose} />
 
       {/* Modal */}
-      <div className="relative w-full max-w-[400px] bg-[hsl(220,25%,12%)]/95 backdrop-blur-2xl rounded-2xl sm:rounded-3xl border border-white/[0.08] shadow-2xl animate-in fade-in zoom-in-95 duration-200 overflow-hidden">
+      <div className="relative w-full max-w-[420px] bg-[hsl(220,25%,10%)] backdrop-blur-2xl rounded-2xl sm:rounded-3xl border border-white/[0.08] shadow-2xl animate-in fade-in zoom-in-95 duration-200 overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-4 sm:px-5 pt-4 sm:pt-5 pb-3">
           <div className="flex items-center gap-2.5">
@@ -129,10 +148,12 @@ const WatchTogetherButton = ({
             </div>
             <div>
               <h3 className="text-sm font-bold text-foreground">{stepTitle[step]}</h3>
-              <p className="text-[10px] text-muted-foreground truncate max-w-[200px]">
-                {step === "created" ? roomCode : title}
-                {season && episode ? ` • T${season}E${episode}` : ""}
-              </p>
+              {step !== "intro" && (
+                <p className="text-[10px] text-muted-foreground truncate max-w-[200px]">
+                  {step === "created" ? roomCode : title}
+                  {season && episode ? ` • T${season}E${episode}` : ""}
+                </p>
+              )}
             </div>
           </div>
           <button onClick={handleClose} className="w-7 h-7 rounded-full bg-white/[0.06] flex items-center justify-center hover:bg-white/10 transition-colors">
@@ -141,11 +162,11 @@ const WatchTogetherButton = ({
         </div>
 
         {/* Step indicator */}
-        {step !== "choose" && (
+        {step !== "intro" && (
           <div className="flex gap-1 px-4 sm:px-5 pb-3">
-            {["choose", step === "join" ? "join" : "create", step === "created" ? "created" : ""].filter(Boolean).map((s, i) => (
+            {[1, 2, 3].map((i) => (
               <div key={i} className={`h-0.5 flex-1 rounded-full transition-colors ${
-                i <= (step === "created" ? 2 : 1) ? "bg-primary" : "bg-white/10"
+                i <= getStepIndex() ? "bg-primary" : "bg-white/10"
               }`} />
             ))}
           </div>
@@ -153,6 +174,57 @@ const WatchTogetherButton = ({
 
         {/* Content */}
         <div className="px-4 sm:px-5 pb-4 sm:pb-5">
+          {/* STEP: Intro (first time) */}
+          {step === "intro" && (
+            <div className="space-y-4">
+              <div className="text-center py-2">
+                <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-3">
+                  <Tv className="w-8 h-8 text-primary" />
+                </div>
+                <h4 className="text-base font-bold text-foreground mb-1">Assista com seus amigos!</h4>
+                <p className="text-xs text-muted-foreground leading-relaxed max-w-[300px] mx-auto">
+                  Crie uma sala e convide até 5 amigos para assistir ao mesmo tempo, com tudo sincronizado.
+                </p>
+              </div>
+
+              <div className="space-y-2.5">
+                {[
+                  { icon: Zap, color: "text-primary", label: "Player sincronizado em tempo real" },
+                  { icon: MessageCircle, color: "text-blue-400", label: "Chat integrado com emojis" },
+                  { icon: Phone, color: "text-green-400", label: "Chamada de voz criptografada" },
+                  { icon: Shield, color: "text-amber-400", label: "Host controla a reprodução" },
+                  { icon: Clock, color: "text-purple-400", label: "Sala ativa por até 6 horas" },
+                ].map(({ icon: Icon, color, label }) => (
+                  <div key={label} className="flex items-center gap-3 p-2.5 rounded-xl bg-white/[0.02] border border-white/[0.04]">
+                    <Icon className={`w-4 h-4 ${color} flex-shrink-0`} />
+                    <span className="text-xs text-foreground/80">{label}</span>
+                  </div>
+                ))}
+              </div>
+
+              {isLoggedIn ? (
+                <button
+                  onClick={handleIntroNext}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-primary text-primary-foreground font-semibold text-sm hover:bg-primary/90 transition-all"
+                >
+                  Prosseguir
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-[10px] text-muted-foreground text-center">Você precisa estar logado para usar.</p>
+                  <button
+                    onClick={() => { handleClose(); navigate("/conta"); }}
+                    className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-primary text-primary-foreground font-semibold text-sm hover:bg-primary/90 transition-all"
+                  >
+                    <LogIn className="w-4 h-4" />
+                    Fazer Login
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* STEP: Choose */}
           {step === "choose" && (
             <div className="space-y-3">
@@ -185,33 +257,11 @@ const WatchTogetherButton = ({
                     </div>
                     <ArrowRight className="w-4 h-4 text-white/20 group-hover:text-primary/60 transition-colors" />
                   </button>
-
-                  {/* Features summary */}
-                  <div className="grid grid-cols-2 gap-2 pt-1">
-                    <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
-                      <Zap className="w-3 h-3 text-primary/60" />
-                      <span>Sync em tempo real</span>
-                    </div>
-                    <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
-                      <Phone className="w-3 h-3 text-primary/60" />
-                      <span>Chamada de voz</span>
-                    </div>
-                    <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
-                      <MessageCircle className="w-3 h-3 text-primary/60" />
-                      <span>Chat integrado</span>
-                    </div>
-                    <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
-                      <Share2 className="w-3 h-3 text-primary/60" />
-                      <span>Até 5 amigos</span>
-                    </div>
-                  </div>
                 </>
               ) : (
                 <div className="text-center py-4 space-y-4">
-                  <div className="space-y-2">
-                    <p className="text-sm text-foreground font-medium">Faça login para usar</p>
-                    <p className="text-xs text-muted-foreground">Você precisa estar logado para criar ou entrar numa sala.</p>
-                  </div>
+                  <p className="text-sm text-foreground font-medium">Faça login para usar</p>
+                  <p className="text-xs text-muted-foreground">Você precisa estar logado para criar ou entrar numa sala.</p>
                   <button
                     onClick={() => { handleClose(); navigate("/conta"); }}
                     className="w-full h-10 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 bg-primary text-primary-foreground hover:bg-primary/90 transition-all"
@@ -227,7 +277,6 @@ const WatchTogetherButton = ({
           {/* STEP: Create */}
           {step === "create" && (
             <div className="space-y-3">
-              {/* Mode selection */}
               <div>
                 <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-2 font-semibold">Modo da sala</p>
                 <div className="grid grid-cols-2 gap-2">
@@ -260,28 +309,6 @@ const WatchTogetherButton = ({
                     </div>
                   </button>
                 </div>
-              </div>
-
-              {/* Info */}
-              <div className="bg-white/[0.02] border border-white/[0.06] rounded-xl p-3 space-y-1.5">
-                <p className="text-[10px] text-muted-foreground flex items-center gap-1.5">
-                  <span className="text-primary">•</span> Você será o host e controlará a reprodução
-                </p>
-                <p className="text-[10px] text-muted-foreground flex items-center gap-1.5">
-                  <span className="text-primary">•</span> Até 5 participantes por sala
-                </p>
-                {mode === "call" ? (
-                  <p className="text-[10px] text-muted-foreground flex items-center gap-1.5">
-                    <span className="text-green-400">•</span> Chamada criptografada P2P
-                  </p>
-                ) : (
-                  <p className="text-[10px] text-muted-foreground flex items-center gap-1.5">
-                    <span className="text-primary">•</span> Chat em tempo real incluído
-                  </p>
-                )}
-                <p className="text-[10px] text-muted-foreground flex items-center gap-1.5">
-                  <span className="text-primary">•</span> A sala expira em 6 horas
-                </p>
               </div>
 
               {error && (

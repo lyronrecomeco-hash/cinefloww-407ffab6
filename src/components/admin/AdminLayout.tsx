@@ -215,19 +215,19 @@ const AdminLayout = () => {
       {mobileOpen && (
         <div className="lg:hidden fixed inset-0 z-50">
           <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" onClick={() => setMobileOpen(false)} />
-          <aside className="relative w-60 h-full bg-card border-r border-white/10 flex flex-col">
+          <aside className="relative w-[260px] max-w-[85vw] h-full bg-card border-r border-white/10 flex flex-col overflow-y-auto">
             <SidebarContent />
           </aside>
         </div>
       )}
 
       {/* Main content */}
-      <div className={`flex-1 flex flex-col transition-all duration-300 ${sidebarOpen ? "lg:ml-60" : "lg:ml-[68px]"}`}>
+      <div className={`flex-1 flex flex-col min-w-0 transition-all duration-300 ${sidebarOpen ? "lg:ml-60" : "lg:ml-[68px]"}`}>
         {/* Top bar */}
-        <header className="h-14 border-b border-white/10 bg-card/30 backdrop-blur-xl flex items-center px-4 gap-3 sticky top-0 z-30">
+        <header className="h-14 border-b border-white/10 bg-card/30 backdrop-blur-xl flex items-center px-3 sm:px-4 gap-2 sm:gap-3 sticky top-0 z-30">
           <button
             onClick={() => { if (window.innerWidth < 1024) setMobileOpen(true); else setSidebarOpen(!sidebarOpen); }}
-            className="w-9 h-9 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center hover:bg-white/10 transition-colors"
+            className="w-9 h-9 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center hover:bg-white/10 transition-colors flex-shrink-0"
           >
             {mobileOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
           </button>
@@ -235,17 +235,18 @@ const AdminLayout = () => {
           {pendingRequests > 0 && (
             <button
               onClick={() => navigate("/admin/pedidos")}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-primary/10 border border-primary/20 text-primary text-xs font-medium hover:bg-primary/20 transition-colors"
+              className="flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded-xl bg-primary/10 border border-primary/20 text-primary text-[10px] sm:text-xs font-medium hover:bg-primary/20 transition-colors"
             >
               <MessageSquare className="w-3.5 h-3.5" />
-              {pendingRequests} pedido{pendingRequests > 1 ? "s" : ""}
+              <span className="hidden xs:inline">{pendingRequests} pedido{pendingRequests > 1 ? "s" : ""}</span>
+              <span className="xs:hidden">{pendingRequests}</span>
             </button>
           )}
           <span className="text-xs text-muted-foreground hidden sm:block">Painel Administrativo</span>
         </header>
 
         {/* Page content */}
-        <main className="flex-1 p-4 lg:p-6 overflow-y-auto">
+        <main className="flex-1 p-3 sm:p-4 lg:p-6 overflow-x-hidden overflow-y-auto">
           <Outlet />
         </main>
       </div>
