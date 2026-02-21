@@ -18,16 +18,27 @@ const MovieCard = ({ movie }: MovieCardProps) => {
 
   useEffect(() => {
     const cType = type === "movie" ? "movie" : "series";
+    // Check content status
     supabase
       .from("content")
-      .select("status, audio_type")
+      .select("status")
       .eq("tmdb_id", movie.id)
       .eq("content_type", cType)
       .maybeSingle()
       .then(({ data }) => {
         if (data?.status === "inactive") setInactive(true);
-        if (data?.audio_type && Array.isArray(data.audio_type)) {
-          setAudioTypes(data.audio_type);
+      });
+
+    // Get audio types from indexed sources (video_cache)
+    supabase
+      .from("video_cache")
+      .select("audio_type")
+      .eq("tmdb_id", movie.id)
+      .eq("content_type", cType)
+      .then(({ data }) => {
+        if (data && data.length > 0) {
+          const types = [...new Set(data.map((r) => r.audio_type))];
+          setAudioTypes(types);
         }
       });
   }, [movie.id, type]);
