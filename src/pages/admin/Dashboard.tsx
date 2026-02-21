@@ -101,17 +101,32 @@ const Dashboard = () => {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+
+    // Only fetch visitors from the last 7 days to avoid huge queries
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
+    const fetchVisitors = async () => {
+      const { data } = await supabase
+        .from("site_visitors")
+        .select("visitor_id, visited_at, pathname, hostname")
+        .gte("visited_at", sevenDaysAgo)
+        .order("visited_at", { ascending: false })
+        .limit(500);
+      if (!cancelled && data) processVisitorData(data);
+    };
+
     const fetchData = async () => {
       try {
-        const [movies, series, doramas, animes, recent, visitors] = await Promise.all([
+        const [movies, series, doramas, animes, recent] = await Promise.all([
           supabase.from("content").select("id", { count: "exact", head: true }).eq("content_type", "movie"),
           supabase.from("content").select("id", { count: "exact", head: true }).eq("content_type", "series"),
           supabase.from("content").select("id", { count: "exact", head: true }).eq("content_type", "dorama"),
           supabase.from("content").select("id", { count: "exact", head: true }).eq("content_type", "anime"),
           supabase.from("content").select("id, title, poster_path, content_type, created_at").order("created_at", { ascending: false }).limit(5),
-          supabase.from("site_visitors").select("visitor_id, visited_at, pathname, hostname").eq("hostname", "lyneflix.online"),
         ]);
 
+        if (cancelled) return;
         setCounts({
           movies: movies.count || 0,
           series: series.count || 0,
@@ -119,41 +134,36 @@ const Dashboard = () => {
           animes: animes.count || 0,
         });
         setRecentContent(recent.data || []);
-        processVisitorData(visitors.data || []);
       } catch (err) {
         console.error("Dashboard error:", err);
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
-    fetchData();
 
-    // Realtime subscription
+    // Fetch content counts and visitors in parallel
+    fetchData();
+    fetchVisitors();
+
+    // Realtime subscription - just refetch recent visitors, not all
     const channel = supabase
       .channel("dashboard-visitors-rt")
       .on("postgres_changes", {
         event: "INSERT",
         schema: "public",
         table: "site_visitors",
-      }, async () => {
-        const { data } = await supabase
-          .from("site_visitors")
-          .select("visitor_id, visited_at, pathname, hostname")
-          .eq("hostname", "lyneflix.online");
-        if (data) processVisitorData(data);
+      }, () => {
+        if (!cancelled) fetchVisitors();
       })
       .subscribe();
 
-    // Auto-refresh online count every 30s
-    const interval = setInterval(async () => {
-      const { data } = await supabase
-        .from("site_visitors")
-        .select("visitor_id, visited_at, pathname, hostname")
-        .eq("hostname", "lyneflix.online");
-      if (data) processVisitorData(data);
-    }, 30000);
+    // Auto-refresh every 60s instead of 30s
+    const interval = setInterval(() => {
+      if (!cancelled) fetchVisitors();
+    }, 60000);
 
     return () => {
+      cancelled = true;
       supabase.removeChannel(channel);
       clearInterval(interval);
     };

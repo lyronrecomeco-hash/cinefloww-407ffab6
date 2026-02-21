@@ -28,8 +28,19 @@ const AdsMetricaPage = () => {
 
     if (data) {
       for (const s of data) {
-        if (s.key === "ads_enabled") setAdsEnabled(s.value === true || s.value === "true");
-        if (s.key === "ads_smartlink") setSmartlink(String(s.value || "").replace(/"/g, ""));
+        if (s.key === "ads_enabled") {
+          const v = s.value;
+          setAdsEnabled(v === true || v === "true" || v === '"true"');
+        }
+        if (s.key === "ads_smartlink") {
+          // Handle both raw string and JSON-encoded string
+          let link = String(s.value || "");
+          // Remove surrounding quotes if JSON-encoded
+          if (link.startsWith('"') && link.endsWith('"')) {
+            try { link = JSON.parse(link); } catch {}
+          }
+          setSmartlink(link);
+        }
       }
     }
   }, []);
@@ -86,17 +97,24 @@ const AdsMetricaPage = () => {
 
   const handleSave = async () => {
     setSaving(true);
-    for (const [key, value] of [["ads_enabled", adsEnabled], ["ads_smartlink", smartlink]] as const) {
+    const entries: [string, any][] = [
+      ["ads_enabled", adsEnabled],
+      ["ads_smartlink", smartlink],
+    ];
+    for (const [key, value] of entries) {
       const { data: existing } = await supabase
         .from("site_settings")
         .select("id")
         .eq("key", key)
         .maybeSingle();
 
+      // Store as proper JSON value (boolean stays boolean, string stays string)
+      const jsonValue = typeof value === "string" ? JSON.stringify(value) : value;
+
       if (existing) {
-        await supabase.from("site_settings").update({ value: value as any }).eq("key", key);
+        await supabase.from("site_settings").update({ value: jsonValue }).eq("key", key);
       } else {
-        await supabase.from("site_settings").insert({ key, value: value as any });
+        await supabase.from("site_settings").insert({ key, value: jsonValue });
       }
     }
     toast.success("Configurações de ADS salvas!");
