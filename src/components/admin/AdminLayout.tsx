@@ -3,7 +3,7 @@ import { useNavigate, useLocation, Outlet } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import {
   LayoutDashboard, Film, Tv, Sparkles, Drama, FolderOpen, ScrollText,
-  Settings, LogOut, Menu, X, ChevronRight, Database, MessageSquare, Bell, Shield, Bot, Flag, Radio, Users
+  Settings, LogOut, Menu, X, ChevronRight, Database, MessageSquare, Bell, Shield, Bot, Radio, Users, BarChart3
 } from "lucide-react";
 
 const menuItems = [
@@ -13,7 +13,7 @@ const menuItems = [
   { label: "Doramas", path: "/admin/doramas", icon: Drama },
   { label: "Animes", path: "/admin/animes", icon: Sparkles },
   { label: "Pedidos", path: "/admin/pedidos", icon: MessageSquare, badge: true },
-  { label: "Reports", path: "/admin/reports", icon: Flag },
+  { label: "ADS Métrica", path: "/admin/ads", icon: BarChart3 },
   { label: "Categorias", path: "/admin/categorias", icon: FolderOpen },
   { label: "Banco", path: "/admin/banco", icon: Database },
   { label: "Bot Discord", path: "/admin/discord", icon: Bot },
@@ -54,37 +54,74 @@ const AdminLayout = () => {
   const location = useLocation();
 
   useEffect(() => {
-    const checkAuth = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) { navigate("/admin/login"); return; }
+    let isMounted = true;
 
-      const { data: roles } = await supabase
-        .from("user_roles")
-        .select("role")
-        .eq("user_id", session.user.id)
-        .eq("role", "admin");
-
-      if (!roles?.length) { await supabase.auth.signOut(); navigate("/admin/login"); return; }
-      setUserEmail(session.user.email || "");
-      setLoading(false);
-
-      // Fetch initial pending count
-      const { count } = await supabase
-        .from("content_requests")
-        .select("*", { count: "exact", head: true })
-        .eq("status", "pending");
-      const c = count || 0;
-      setPendingRequests(c);
-      prevPendingRef.current = c;
+    const checkAdminRole = async (userId: string) => {
+      try {
+        const { data } = await supabase
+          .from("user_roles")
+          .select("role")
+          .eq("user_id", userId)
+          .eq("role", "admin");
+        return !!(data && data.length > 0);
+      } catch {
+        return false;
+      }
     };
 
-    checkAuth();
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+    // Listener for ongoing auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!isMounted) return;
       if (event === "SIGNED_OUT") navigate("/admin/login");
+      if (session?.user) {
+        setUserEmail(session.user.email || "");
+        setTimeout(() => {
+          if (isMounted) {
+            checkAdminRole(session.user.id).then(isAdmin => {
+              if (isMounted && !isAdmin) {
+                supabase.auth.signOut();
+                navigate("/admin/login");
+              }
+            });
+          }
+        }, 0);
+      }
     });
 
-    return () => subscription.unsubscribe();
+    // Initial auth check
+    const initAuth = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!isMounted) return;
+        if (!session) { navigate("/admin/login"); return; }
+
+        const isAdmin = await checkAdminRole(session.user.id);
+        if (!isMounted) return;
+        if (!isAdmin) { await supabase.auth.signOut(); navigate("/admin/login"); return; }
+
+        setUserEmail(session.user.email || "");
+
+        // Fetch initial pending count
+        const { count } = await supabase
+          .from("content_requests")
+          .select("*", { count: "exact", head: true })
+          .eq("status", "pending");
+        if (isMounted) {
+          const c = count || 0;
+          setPendingRequests(c);
+          prevPendingRef.current = c;
+        }
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    };
+
+    initAuth();
+
+    return () => {
+      isMounted = false;
+      subscription.unsubscribe();
+    };
   }, [navigate]);
 
   // Real-time subscription for new requests
