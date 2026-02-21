@@ -216,25 +216,35 @@ const BancoPage = () => {
       // Fire turbo-resolve (clears failures + launches 15 parallel waves)
       await supabase.functions.invoke("turbo-resolve");
       
-      // Poll progress until done
-      let consecutiveIdle = 0;
-      let lastResolved = 0;
+    // Poll progress until done — longer patience for large batches
+    let consecutiveIdle = 0;
+    let lastResolved = 0;
+    const MAX_IDLE = 12; // Wait up to ~36s of no progress before stopping
+    
+    while (!cancelRef.current && consecutiveIdle < MAX_IDLE) {
+      await new Promise(r => setTimeout(r, 3000));
       
-      while (!cancelRef.current && consecutiveIdle < 5) {
-        await new Promise(r => setTimeout(r, 3000));
-        
-        const { count: nowCached } = await supabase.from("video_cache").select("*", { count: "exact", head: true }).gt("expires_at", new Date().toISOString());
-        const currentResolved = (nowCached || 0) - (cachedCount || 0);
-        
-        setResolveProgress({ current: Math.max(0, currentResolved), total: totalToResolve });
-        
-        if (currentResolved === lastResolved) {
-          consecutiveIdle++;
-        } else {
-          consecutiveIdle = 0;
-          lastResolved = currentResolved;
+      const { count: nowCached } = await supabase.from("video_cache").select("*", { count: "exact", head: true }).gt("expires_at", new Date().toISOString());
+      const currentResolved = (nowCached || 0) - (cachedCount || 0);
+      
+      setResolveProgress({ current: Math.max(0, currentResolved), total: totalToResolve });
+      setStats(prev => ({
+        ...prev,
+        withVideo: nowCached || prev.withVideo,
+        withoutVideo: Math.max(0, prev.total - (nowCached || 0)),
+      }));
+      
+      if (currentResolved === lastResolved) {
+        consecutiveIdle++;
+        // Re-fire turbo-resolve to keep pushing
+        if (consecutiveIdle === 4 || consecutiveIdle === 8) {
+          supabase.functions.invoke("turbo-resolve").catch(() => {});
         }
+      } else {
+        consecutiveIdle = 0;
+        lastResolved = currentResolved;
       }
+    }
 
       toast({
         title: cancelRef.current ? "Resolução cancelada" : "Resolução concluída",
