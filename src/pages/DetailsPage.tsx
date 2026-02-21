@@ -17,6 +17,7 @@ import ReportModal from "@/components/ReportModal";
 // DetailAutoWarning disabled
 import LoginRequiredModal from "@/components/LoginRequiredModal";
 import WatchTogetherButton from "@/components/watch-together/WatchTogetherButton";
+import AdGateModal from "@/components/AdGateModal";
 import { fromSlug } from "@/lib/slugify";
 import { toSlug } from "@/lib/slugify";
 import {
@@ -46,16 +47,28 @@ const DetailsPage = ({ type }: DetailsPageProps) => {
   const [showRequest, setShowRequest] = useState(false);
   const [showReport, setShowReport] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
+  const [showAdGate, setShowAdGate] = useState(false);
+  const [pendingAudio, setPendingAudio] = useState<string | null>(null);
+  const [adsEnabled, setAdsEnabled] = useState(false);
+  const [isTestUser, setIsTestUser] = useState(false);
   const [inMyList, setInMyList] = useState(false);
   const [hasVideo, setHasVideo] = useState<boolean | null>(null); // null = loading
   const [activeProfileId, setActiveProfileId] = useState<string | null>(null);
 
-  // Load active profile
+  // Load active profile + check ads config + test user
   useEffect(() => {
     const stored = localStorage.getItem("lyneflix_active_profile");
     if (stored) {
       try { setActiveProfileId(JSON.parse(stored).id); } catch {}
     }
+    // Check if ads enabled
+    supabase.from("site_settings").select("value").eq("key", "ads_enabled").maybeSingle().then(({ data }) => {
+      if (data?.value === true || data?.value === "true") setAdsEnabled(true);
+    });
+    // Check if test user
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user?.email === "admin-st@gmail.com") setIsTestUser(true);
+    });
   }, []);
 
   useEffect(() => {
@@ -165,13 +178,28 @@ const DetailsPage = ({ type }: DetailsPageProps) => {
   const trailer = detail?.videos?.results?.find((v) => v.type === "Trailer" && v.site === "YouTube");
 
   const handleWatchClick = () => {
-    // If user has a saved audio preference, skip the modal entirely
     const savedPref = localStorage.getItem("cineflow_audio_pref");
-    if (savedPref) {
-      handleAudioSelect(savedPref);
+    const audioToUse = savedPref || null;
+    // Show ad gate if ads enabled AND user is test user (admin-st@gmail.com)
+    if (adsEnabled && isTestUser) {
+      setPendingAudio(audioToUse);
+      setShowAdGate(true);
+      return;
+    }
+    if (audioToUse) {
+      handleAudioSelect(audioToUse);
       return;
     }
     setShowAudioModal(true);
+  };
+
+  const handleAdValidated = () => {
+    setShowAdGate(false);
+    if (pendingAudio) {
+      handleAudioSelect(pendingAudio);
+    } else {
+      setShowAudioModal(true);
+    }
   };
 
   // Prefetch: check if video is cached (existence only, no URL exposed)
@@ -475,6 +503,13 @@ const DetailsPage = ({ type }: DetailsPageProps) => {
         />
       )}
       {showLoginModal && <LoginRequiredModal onClose={() => setShowLoginModal(false)} />}
+      <AdGateModal
+        open={showAdGate}
+        onClose={() => setShowAdGate(false)}
+        onValidated={handleAdValidated}
+        contentTitle={detail ? getDisplayTitle(detail) : undefined}
+        tmdbId={detail?.id}
+      />
     </div>
   );
 };

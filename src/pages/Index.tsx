@@ -34,23 +34,19 @@ const Index = () => {
   const [animes, setAnimes] = useState<TMDBMovie[]>([]);
   const [loading, setLoading] = useState(true);
   const [sectionsReady, setSectionsReady] = useState(false);
-  const [isKidsMode, setIsKidsMode] = useState(false);
+  const [isKidsMode] = useState(() => {
+    try {
+      const raw = localStorage.getItem("lyneflix_active_profile");
+      if (raw) return !!JSON.parse(raw).is_kids;
+    } catch {}
+    return false;
+  });
 
   // Kids-specific state
   const [kidsAnimatedMovies, setKidsAnimatedMovies] = useState<TMDBMovie[]>([]);
   const [kidsAnimatedSeries, setKidsAnimatedSeries] = useState<TMDBMovie[]>([]);
   const [kidsFamilyMovies, setKidsFamilyMovies] = useState<TMDBMovie[]>([]);
   const [kidsPopular, setKidsPopular] = useState<TMDBMovie[]>([]);
-
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem("lyneflix_active_profile");
-      if (raw) {
-        const profile = JSON.parse(raw);
-        if (profile.is_kids) setIsKidsMode(true);
-      }
-    } catch {}
-  }, []);
 
   useEffect(() => {
     if (isKidsMode) {

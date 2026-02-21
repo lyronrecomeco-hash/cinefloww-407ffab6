@@ -14,6 +14,36 @@ export type Database = {
   }
   public: {
     Tables: {
+      ad_clicks: {
+        Row: {
+          clicked_at: string
+          content_title: string | null
+          id: string
+          tmdb_id: number | null
+          user_email: string | null
+          validated: boolean
+          visitor_id: string
+        }
+        Insert: {
+          clicked_at?: string
+          content_title?: string | null
+          id?: string
+          tmdb_id?: number | null
+          user_email?: string | null
+          validated?: boolean
+          visitor_id: string
+        }
+        Update: {
+          clicked_at?: string
+          content_title?: string | null
+          id?: string
+          tmdb_id?: number | null
+          user_email?: string | null
+          validated?: boolean
+          visitor_id?: string
+        }
+        Relationships: []
+      }
       api_access_log: {
         Row: {
           accessed_at: string
