@@ -59,21 +59,21 @@ const CategoriesModal = ({ open, onClose, onSelect, selectedId, contentType = "m
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" onClick={onClose}>
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
       <div
-        className="relative glass-strong rounded-2xl border border-white/10 w-full max-w-lg max-h-[80vh] overflow-hidden animate-in fade-in zoom-in-95 duration-200"
+        className="relative glass-strong rounded-2xl border border-white/10 w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-200"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between p-5 border-b border-white/10">
-          <h2 className="font-display text-lg font-bold">Categorias</h2>
-          <button onClick={onClose} className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center hover:bg-white/10 transition-colors">
-            <X className="w-4 h-4" />
+        <div className="flex items-center justify-between p-4 border-b border-white/10">
+          <h2 className="font-display text-base font-bold">Categorias</h2>
+          <button onClick={onClose} className="w-7 h-7 rounded-lg bg-white/5 flex items-center justify-center hover:bg-white/10 transition-colors">
+            <X className="w-3.5 h-3.5" />
           </button>
         </div>
 
-        <div className="p-4 overflow-y-auto max-h-[70vh] scrollbar-hide">
-          <div className="grid grid-cols-3 gap-2">
+        <div className="p-3">
+          <div className="grid grid-cols-3 gap-1.5">
             <button
               onClick={() => { onSelect(null); onClose(); }}
-              className={`px-4 py-3 rounded-xl text-sm font-medium transition-all text-center ${
+              className={`px-2 py-2 rounded-lg text-xs font-medium transition-all text-center ${
                 !selectedId
                   ? "bg-primary text-primary-foreground"
                   : "bg-white/5 text-muted-foreground hover:bg-white/10 hover:text-foreground border border-white/5"
@@ -85,7 +85,7 @@ const CategoriesModal = ({ open, onClose, onSelect, selectedId, contentType = "m
               <button
                 key={g.id}
                 onClick={() => { onSelect({ id: String(g.id), name: g.name }); onClose(); }}
-                className={`px-4 py-3 rounded-xl text-sm font-medium transition-all text-center ${
+                className={`px-2 py-2 rounded-lg text-xs font-medium transition-all text-center ${
                   selectedId === String(g.id)
                     ? "bg-primary text-primary-foreground"
                     : "bg-white/5 text-muted-foreground hover:bg-white/10 hover:text-foreground border border-white/5"
