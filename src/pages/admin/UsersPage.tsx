@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import {
   Users, Search, Ban, CheckCircle, Shield, Clock, Eye, X, Loader2, RefreshCw,
+  UserPlus, Key, Save,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -29,6 +30,33 @@ interface AuditLog {
   created_at: string;
 }
 
+interface AdminUser {
+  user_id: string;
+  email: string;
+  role: string;
+  allowed_paths: string[];
+}
+
+const ADMIN_TABS = [
+  { path: "/admin", label: "Dashboard" },
+  { path: "/admin/filmes", label: "Filmes" },
+  { path: "/admin/series", label: "Séries" },
+  { path: "/admin/doramas", label: "Doramas" },
+  { path: "/admin/animes", label: "Animes" },
+  { path: "/admin/pedidos", label: "Pedidos" },
+  { path: "/admin/ads", label: "ADS Manager" },
+  { path: "/admin/categorias", label: "Categorias" },
+  { path: "/admin/banco", label: "Banco" },
+  { path: "/admin/discord", label: "Bot Discord" },
+  { path: "/admin/logs", label: "Logs" },
+  { path: "/admin/seguranca", label: "Segurança" },
+  { path: "/admin/telegram", label: "Bot Telegram" },
+  { path: "/admin/usuarios", label: "Usuários" },
+  { path: "/admin/avisos", label: "Avisos" },
+  { path: "/admin/watch-rooms", label: "Watch Together" },
+  { path: "/admin/config", label: "Configurações" },
+];
+
 const UsersPage = () => {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
@@ -39,6 +67,20 @@ const UsersPage = () => {
   const [banReason, setBanReason] = useState("");
   const [stats, setStats] = useState({ total: 0, banned: 0, today: 0 });
   const { toast } = useToast();
+
+  // Create admin state
+  const [showCreateAdmin, setShowCreateAdmin] = useState(false);
+  const [newAdminEmail, setNewAdminEmail] = useState("");
+  const [newAdminPassword, setNewAdminPassword] = useState("");
+  const [newAdminRole, setNewAdminRole] = useState<"admin" | "moderator">("moderator");
+  const [newAdminPaths, setNewAdminPaths] = useState<string[]>(["/admin"]);
+  const [creatingAdmin, setCreatingAdmin] = useState(false);
+
+  // Admin users list
+  const [adminUsers, setAdminUsers] = useState<AdminUser[]>([]);
+  const [editingAdmin, setEditingAdmin] = useState<string | null>(null);
+  const [editPaths, setEditPaths] = useState<string[]>([]);
+  const [savingPerms, setSavingPerms] = useState(false);
 
   const fetchProfiles = useCallback(async () => {
     setLoading(true);
@@ -60,19 +102,42 @@ const UsersPage = () => {
     setLoading(false);
   }, []);
 
+  const fetchAdminUsers = useCallback(async () => {
+    const { data: roles } = await supabase.from("user_roles").select("user_id, role");
+    if (!roles?.length) return;
+
+    const userIds = roles.map((r) => r.user_id);
+    const { data: profs } = await supabase
+      .from("profiles")
+      .select("user_id, email")
+      .in("user_id", userIds);
+
+    const { data: perms } = await supabase.from("admin_permissions").select("user_id, allowed_paths");
+
+    const admins: AdminUser[] = roles.map((r) => {
+      const prof = profs?.find((p) => p.user_id === r.user_id);
+      const perm = perms?.find((p) => p.user_id === r.user_id);
+      return {
+        user_id: r.user_id,
+        email: prof?.email || "—",
+        role: r.role,
+        allowed_paths: (perm?.allowed_paths as string[]) || [],
+      };
+    });
+    setAdminUsers(admins);
+  }, []);
+
   useEffect(() => {
     fetchProfiles();
+    fetchAdminUsers();
 
-    // Realtime
     const channel = supabase
       .channel("admin-profiles")
-      .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, () => {
-        fetchProfiles();
-      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, () => fetchProfiles())
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [fetchProfiles]);
+  }, [fetchProfiles, fetchAdminUsers]);
 
   const openDetail = async (profile: Profile) => {
     setSelected(profile);
@@ -101,7 +166,6 @@ const UsersPage = () => {
       })
       .eq("user_id", profile.user_id);
 
-    // Log the action
     await supabase.from("auth_audit_log").insert({
       user_id: profile.user_id,
       event: newBanned ? "admin_ban" : "admin_unban",
@@ -112,9 +176,70 @@ const UsersPage = () => {
       title: newBanned ? "Usuário banido" : "Usuário desbanido",
       description: `${profile.email} foi ${newBanned ? "banido" : "desbanido"}.`,
     });
-
     setSelected(null);
     fetchProfiles();
+  };
+
+  const handleCreateAdmin = async () => {
+    if (!newAdminEmail.trim() || !newAdminPassword.trim()) return;
+    setCreatingAdmin(true);
+
+    try {
+      // Create user via edge function
+      const { data, error } = await supabase.functions.invoke("create-admin", {
+        body: { email: newAdminEmail.trim(), password: newAdminPassword },
+      });
+
+      if (error) throw error;
+      const userId = data?.user_id || data?.id;
+      if (!userId) throw new Error("Falha ao criar usuário");
+
+      // Assign role
+      await supabase.from("user_roles").upsert({
+        user_id: userId,
+        role: newAdminRole,
+      }, { onConflict: "user_id,role" });
+
+      // Save permissions
+      await supabase.from("admin_permissions").upsert({
+        user_id: userId,
+        allowed_paths: newAdminPaths,
+      }, { onConflict: "user_id" });
+
+      toast({ title: "Admin criado!", description: `${newAdminEmail} agora é ${newAdminRole}.` });
+      setShowCreateAdmin(false);
+      setNewAdminEmail("");
+      setNewAdminPassword("");
+      setNewAdminPaths(["/admin"]);
+      fetchAdminUsers();
+      fetchProfiles();
+    } catch (err: any) {
+      toast({ title: "Erro", description: err.message, variant: "destructive" });
+    } finally {
+      setCreatingAdmin(false);
+    }
+  };
+
+  const handleSavePermissions = async (userId: string) => {
+    setSavingPerms(true);
+    try {
+      await supabase.from("admin_permissions").upsert({
+        user_id: userId,
+        allowed_paths: editPaths,
+      }, { onConflict: "user_id" });
+
+      toast({ title: "Permissões salvas!" });
+      setEditingAdmin(null);
+      fetchAdminUsers();
+    } catch (err: any) {
+      toast({ title: "Erro", description: err.message, variant: "destructive" });
+    } finally {
+      setSavingPerms(false);
+    }
+  };
+
+  const togglePath = (path: string, paths: string[], setPaths: (p: string[]) => void) => {
+    setPaths(paths.includes(path) ? paths.filter((p) => p !== path) : [...paths, path]);
   };
 
   const filtered = profiles.filter(
@@ -138,16 +263,106 @@ const UsersPage = () => {
             <Users className="w-6 h-6 text-primary" />
             Usuários
           </h1>
-          <p className="text-sm text-muted-foreground mt-1">Gerenciamento de contas e segurança</p>
+          <p className="text-sm text-muted-foreground mt-1">Gerenciamento de contas, admins e permissões</p>
         </div>
-        <button
-          onClick={fetchProfiles}
-          className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-sm hover:bg-white/10 transition-colors"
-        >
-          <RefreshCw className="w-4 h-4" />
-          Atualizar
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setShowCreateAdmin(true)}
+            className="flex items-center gap-2 px-3 py-2 rounded-xl bg-primary/10 border border-primary/20 text-primary text-sm hover:bg-primary/20 transition-colors"
+          >
+            <UserPlus className="w-4 h-4" />
+            Criar Admin
+          </button>
+          <button
+            onClick={fetchProfiles}
+            className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-sm hover:bg-white/10 transition-colors"
+          >
+            <RefreshCw className="w-4 h-4" />
+          </button>
+        </div>
       </div>
+
+      {/* Admin Users Section */}
+      {adminUsers.length > 0 && (
+        <div className="glass rounded-2xl p-4">
+          <h2 className="text-sm font-semibold flex items-center gap-2 mb-3">
+            <Key className="w-4 h-4 text-primary" />
+            Administradores ({adminUsers.length})
+          </h2>
+          <div className="space-y-2">
+            {adminUsers.map((admin) => (
+              <div key={admin.user_id} className="rounded-xl bg-white/[0.03] border border-white/5 p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center">
+                      <span className="text-xs font-bold text-primary">{admin.email.charAt(0).toUpperCase()}</span>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium">{admin.email}</p>
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
+                        admin.role === "admin" ? "bg-primary/20 text-primary" : "bg-amber-500/20 text-amber-400"
+                      }`}>
+                        {admin.role.toUpperCase()}
+                      </span>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      if (editingAdmin === admin.user_id) {
+                        setEditingAdmin(null);
+                      } else {
+                        setEditingAdmin(admin.user_id);
+                        setEditPaths(admin.allowed_paths);
+                      }
+                    }}
+                    className="text-xs px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 transition-colors"
+                  >
+                    {editingAdmin === admin.user_id ? "Cancelar" : "Permissões"}
+                  </button>
+                </div>
+
+                {/* Permissions editor */}
+                {editingAdmin === admin.user_id && (
+                  <div className="mt-3 pt-3 border-t border-white/10">
+                    <p className="text-xs text-muted-foreground mb-2">Selecione as abas que este usuário pode acessar:</p>
+                    <div className="flex flex-wrap gap-1.5 mb-3">
+                      {ADMIN_TABS.map((tab) => (
+                        <button
+                          key={tab.path}
+                          onClick={() => togglePath(tab.path, editPaths, setEditPaths)}
+                          className={`text-[11px] px-2.5 py-1 rounded-lg border transition-colors ${
+                            editPaths.includes(tab.path)
+                              ? "bg-primary/20 border-primary/30 text-primary"
+                              : "bg-white/5 border-white/10 text-muted-foreground hover:bg-white/10"
+                          }`}
+                        >
+                          {tab.label}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setEditPaths(ADMIN_TABS.map((t) => t.path))}
+                        className="text-[11px] px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 transition-colors"
+                      >
+                        Selecionar tudo
+                      </button>
+                      <button
+                        onClick={() => handleSavePermissions(admin.user_id)}
+                        disabled={savingPerms}
+                        className="text-[11px] px-3 py-1.5 rounded-lg bg-primary/20 border border-primary/30 text-primary hover:bg-primary/30 transition-colors flex items-center gap-1"
+                      >
+                        {savingPerms ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+                        Salvar
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-3 gap-3">
@@ -216,6 +431,105 @@ const UsersPage = () => {
         )}
       </div>
 
+      {/* Create Admin Modal */}
+      {showCreateAdmin && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" onClick={() => setShowCreateAdmin(false)} />
+          <div className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto glass-strong rounded-3xl p-6 animate-in fade-in zoom-in-95 duration-300">
+            <button onClick={() => setShowCreateAdmin(false)} className="absolute top-4 right-4 text-muted-foreground hover:text-foreground">
+              <X className="w-5 h-5" />
+            </button>
+
+            <h3 className="font-display text-lg font-bold mb-1 flex items-center gap-2">
+              <UserPlus className="w-5 h-5 text-primary" />
+              Criar Administrador
+            </h3>
+            <p className="text-xs text-muted-foreground mb-6">Crie uma conta com acesso ao painel administrativo.</p>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1.5">E-mail</label>
+                <input
+                  type="email"
+                  value={newAdminEmail}
+                  onChange={(e) => setNewAdminEmail(e.target.value)}
+                  placeholder="admin@lyneflix.online"
+                  className="w-full h-11 px-4 rounded-xl bg-white/5 border border-white/10 text-sm focus:outline-none focus:border-primary/50 transition-colors"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1.5">Senha</label>
+                <input
+                  type="password"
+                  value={newAdminPassword}
+                  onChange={(e) => setNewAdminPassword(e.target.value)}
+                  placeholder="Mínimo 6 caracteres"
+                  className="w-full h-11 px-4 rounded-xl bg-white/5 border border-white/10 text-sm focus:outline-none focus:border-primary/50 transition-colors"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1.5">Função</label>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setNewAdminRole("admin")}
+                    className={`flex-1 h-11 rounded-xl text-sm font-medium border transition-colors ${
+                      newAdminRole === "admin"
+                        ? "bg-primary/20 border-primary/30 text-primary"
+                        : "bg-white/5 border-white/10 text-muted-foreground hover:bg-white/10"
+                    }`}
+                  >
+                    Admin (total)
+                  </button>
+                  <button
+                    onClick={() => setNewAdminRole("moderator")}
+                    className={`flex-1 h-11 rounded-xl text-sm font-medium border transition-colors ${
+                      newAdminRole === "moderator"
+                        ? "bg-amber-500/20 border-amber-500/30 text-amber-400"
+                        : "bg-white/5 border-white/10 text-muted-foreground hover:bg-white/10"
+                    }`}
+                  >
+                    Moderador
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1.5">
+                  Abas permitidas {newAdminRole === "admin" && <span className="text-primary">(Admin tem acesso total)</span>}
+                </label>
+                <div className="flex flex-wrap gap-1.5">
+                  {ADMIN_TABS.map((tab) => (
+                    <button
+                      key={tab.path}
+                      onClick={() => togglePath(tab.path, newAdminPaths, setNewAdminPaths)}
+                      disabled={newAdminRole === "admin"}
+                      className={`text-[11px] px-2.5 py-1 rounded-lg border transition-colors ${
+                        newAdminRole === "admin" || newAdminPaths.includes(tab.path)
+                          ? "bg-primary/20 border-primary/30 text-primary"
+                          : "bg-white/5 border-white/10 text-muted-foreground hover:bg-white/10"
+                      } disabled:opacity-60`}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <button
+                onClick={handleCreateAdmin}
+                disabled={creatingAdmin || !newAdminEmail.trim() || !newAdminPassword.trim()}
+                className="w-full h-12 rounded-xl font-semibold text-sm bg-gradient-to-r from-primary to-purple-600 text-white hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2 transition-all"
+              >
+                {creatingAdmin ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
+                {creatingAdmin ? "Criando..." : "Criar Administrador"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Detail Modal */}
       {selected && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -225,7 +539,6 @@ const UsersPage = () => {
               <X className="w-5 h-5" />
             </button>
 
-            {/* User header */}
             <div className="flex items-center gap-4 mb-6">
               <div className="w-14 h-14 rounded-2xl bg-primary/20 flex items-center justify-center">
                 <span className="text-xl font-bold text-primary">
@@ -238,7 +551,6 @@ const UsersPage = () => {
               </div>
             </div>
 
-            {/* Info grid */}
             <div className="grid grid-cols-2 gap-3 mb-6">
               <div className="glass rounded-xl p-3">
                 <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">Criado em</p>
@@ -258,7 +570,6 @@ const UsersPage = () => {
               </div>
             </div>
 
-            {/* Ban section */}
             <div className="glass rounded-xl p-4 mb-6">
               <p className="text-xs font-medium mb-2 flex items-center gap-2">
                 <Shield className="w-4 h-4" />
@@ -287,7 +598,6 @@ const UsersPage = () => {
               </button>
             </div>
 
-            {/* Audit logs */}
             <div>
               <p className="text-xs font-medium mb-3 flex items-center gap-2">
                 <Clock className="w-4 h-4" />
