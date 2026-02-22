@@ -75,20 +75,7 @@ Deno.serve(async (req) => {
     );
 
     const body = await req.json().catch(() => ({}));
-    const { items: rawItems, json_url, offset = 0, batch_size = BATCH_SIZE, auto = false } = body;
-
-    // Support fetching JSON from URL (avoids sending huge payload)
-    let items = rawItems;
-    if (!items && json_url) {
-      try {
-        const res = await fetch(json_url);
-        items = await res.json();
-      } catch (e) {
-        return new Response(JSON.stringify({ error: "Failed to fetch JSON from URL" }), {
-          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-    }
+    const { items, offset = 0, batch_size = BATCH_SIZE, auto = false } = body;
 
     if (!items || !Array.isArray(items) || items.length === 0) {
       return new Response(JSON.stringify({ error: "No items provided" }), {
@@ -201,20 +188,17 @@ Deno.serve(async (req) => {
     const nextOffset = offset + batch_size;
     const hasMore = nextOffset < items.length;
 
-    // Self-chain if more to process — pass json_url if available to avoid huge payloads
+    // Self-chain if more to process
     if (hasMore && auto) {
       const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
       const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-      const chainBody = json_url 
-        ? { json_url, offset: nextOffset, batch_size, auto: true }
-        : { items, offset: nextOffset, batch_size, auto: true };
       fetch(`${supabaseUrl}/functions/v1/import-visioncine`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${serviceKey}`,
         },
-        body: JSON.stringify(chainBody),
+        body: JSON.stringify({ items, offset: nextOffset, batch_size, auto: true }),
       }).catch(() => {});
     }
 

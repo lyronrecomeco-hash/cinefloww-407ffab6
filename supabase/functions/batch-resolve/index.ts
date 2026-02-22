@@ -7,9 +7,8 @@ const corsHeaders = {
 };
 
 const BATCH_SIZE = 100;
-const CONCURRENCY = 25;
-const FAILURE_RETRY_HOURS = 6;
-const STALE_HOURS = 20; // Re-resolve links expiring within 20 hours
+const CONCURRENCY = 15;
+const FAILURE_RETRY_HOURS = 12; // Retry failed items after 12 hours
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -24,13 +23,6 @@ Deno.serve(async (req) => {
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-  // Parse mode from body
-  let mode = "unresolved"; // default: resolve missing links
-  try {
-    const body = await req.json();
-    if (body?.mode) mode = body.mode;
-  } catch {}
-
   try {
     // 1. Clear old failures so they get retried
     const retryThreshold = new Date(Date.now() - FAILURE_RETRY_HOURS * 60 * 60 * 1000).toISOString();
@@ -44,94 +36,35 @@ Deno.serve(async (req) => {
       console.log(`[batch-resolve] Cleared ${clearedCount} old failures for retry`);
     }
 
-    // 2. Clear expired video_cache entries
+    // 2. Also clear expired video_cache entries so they get re-resolved
     await supabase
       .from("video_cache")
       .delete()
       .lt("expires_at", new Date().toISOString());
 
-    let batch: any[] = [];
+    // 3. Get unresolved content
+    const { data: missing, error: qErr } = await supabase.rpc("get_unresolved_content", {
+      batch_limit: BATCH_SIZE,
+    });
 
-    if (mode === "stale") {
-      // MODE: Find links expiring soon and refresh them
-      const staleThreshold = new Date(Date.now() + STALE_HOURS * 60 * 60 * 1000).toISOString();
-      const { data: staleItems } = await supabase
-        .from("video_cache")
-        .select("tmdb_id, content_type")
-        .lt("expires_at", staleThreshold)
-        .gt("expires_at", new Date().toISOString())
-        .limit(BATCH_SIZE);
-      
-      if (staleItems?.length) {
-        // Get content details for stale items
-        const tmdbIds = [...new Set(staleItems.map(s => s.tmdb_id))];
-        const { data: contentItems } = await supabase
-          .from("content")
-          .select("tmdb_id, imdb_id, content_type, title")
-          .in("tmdb_id", tmdbIds);
-        
-        if (contentItems) {
-          batch = contentItems;
-          // Delete the stale cache so they get re-resolved
-          for (const item of staleItems) {
-            await supabase.from("video_cache").delete()
-              .eq("tmdb_id", item.tmdb_id)
-              .eq("content_type", item.content_type);
-          }
-        }
-      }
-      console.log(`[batch-resolve] STALE mode: found ${batch.length} items to refresh`);
-    } else if (mode === "newest") {
-      // MODE: Prioritize newest content that has no links
-      const { data: missing } = await supabase
-        .from("content")
-        .select("tmdb_id, imdb_id, content_type, title")
-        .order("created_at", { ascending: false })
-        .limit(200);
-      
-      if (missing?.length) {
-        // Filter out ones that already have cache
-        const tmdbIds = missing.map(m => m.tmdb_id);
-        const { data: cached } = await supabase
-          .from("video_cache")
-          .select("tmdb_id")
-          .in("tmdb_id", tmdbIds)
-          .gt("expires_at", new Date().toISOString());
-        
-        const cachedSet = new Set(cached?.map(c => c.tmdb_id) || []);
-        const { data: failedItems } = await supabase
-          .from("resolve_failures")
-          .select("tmdb_id")
-          .in("tmdb_id", tmdbIds);
-        const failedSet = new Set(failedItems?.map(f => f.tmdb_id) || []);
-        
-        batch = missing.filter(m => !cachedSet.has(m.tmdb_id) && !failedSet.has(m.tmdb_id)).slice(0, BATCH_SIZE);
-      }
-      console.log(`[batch-resolve] NEWEST mode: found ${batch.length} new items to resolve`);
-    } else {
-      // MODE: Default unresolved
-      const { data: missing, error: qErr } = await supabase.rpc("get_unresolved_content", {
-        batch_limit: BATCH_SIZE,
-      });
-
-      if (qErr) {
-        console.log(`[batch-resolve] RPC error: ${qErr.message}, using fallback`);
-        return await fallbackResolve(supabase, supabaseUrl, serviceKey);
-      }
-      batch = missing || [];
+    if (qErr) {
+      console.log(`[batch-resolve] RPC error: ${qErr.message}, using fallback`);
+      return await fallbackResolve(supabase, supabaseUrl, serviceKey);
     }
 
-    if (!batch.length) {
+    if (!missing?.length) {
       return new Response(JSON.stringify({ 
         message: "All items processed!", 
-        resolved: 0, failed: 0, remaining: 0, mode,
+        resolved: 0, 
+        failed: 0, 
+        remaining: 0,
         cleared_failures: clearedCount || 0,
       }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    console.log(`[batch-resolve] Processing ${batch.length} items (${mode}) with ${CONCURRENCY} workers`);
+    console.log(`[batch-resolve] Processing ${missing.length} items with ${CONCURRENCY} workers`);
 
     let resolved = 0;
     let failed = 0;
@@ -154,6 +87,7 @@ Deno.serve(async (req) => {
             content_type: item.content_type,
             audio_type: "legendado",
             title: item.title,
+            // Skip playerflix in batch mode - it only works client-side via iframe
             _skip_providers: ["playerflix"],
           }),
           signal: controller.signal,
@@ -162,6 +96,7 @@ Deno.serve(async (req) => {
         clearTimeout(timeout);
         const data = await res.json();
         
+        // iframe-proxy is not a real video URL - count as failure
         if (data?.url && data?.type !== "iframe-proxy") {
           resolved++;
           console.log(`[batch-resolve] ✓ ${item.title} → ${data.provider}`);
@@ -175,7 +110,8 @@ Deno.serve(async (req) => {
       }
     };
 
-    const queue = [...batch];
+    // Run with high concurrency
+    const queue = [...missing];
     const workers = Array.from({ length: Math.min(CONCURRENCY, queue.length) }, async () => {
       while (queue.length > 0) {
         const item = queue.shift();
@@ -185,6 +121,7 @@ Deno.serve(async (req) => {
 
     await Promise.all(workers);
 
+    // Record failures
     if (failedItems.length > 0) {
       await supabase.from("resolve_failures").upsert(
         failedItems.map(f => ({ tmdb_id: f.tmdb_id, content_type: f.content_type, attempted_at: new Date().toISOString() })),
@@ -194,8 +131,9 @@ Deno.serve(async (req) => {
 
     return new Response(JSON.stringify({
       message: "Batch complete",
-      resolved, failed, mode,
-      batchSize: batch.length,
+      resolved,
+      failed,
+      batchSize: missing.length,
       cleared_failures: clearedCount || 0,
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },

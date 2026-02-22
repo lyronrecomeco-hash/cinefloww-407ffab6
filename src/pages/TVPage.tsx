@@ -81,8 +81,8 @@ const TVPage = () => {
     return matchCat && matchSearch;
   });
 
-  const handleWatch = (_channel: TVChannel) => {
-    // Player temporariamente indisponível
+  const handleWatch = (channel: TVChannel) => {
+    navigate(`/tv/${channel.id}`);
   };
 
   return (
@@ -155,11 +155,15 @@ const TVPage = () => {
                 <button
                   key={channel.id}
                   onClick={() => handleWatch(channel)}
-                  className="group relative glass glass-hover rounded-xl sm:rounded-2xl overflow-hidden cursor-default transition-all duration-300 text-left opacity-70"
+                  className="group relative glass glass-hover rounded-xl sm:rounded-2xl overflow-hidden cursor-pointer transition-all duration-300 hover:scale-[1.03] hover:shadow-xl hover:shadow-primary/10 text-left"
                 >
-                  {/* Indisponível indicator */}
-                  <div className="absolute top-2 right-2 z-10 flex items-center gap-1 px-1.5 sm:px-2 py-0.5 rounded-full bg-muted/90 backdrop-blur-sm">
-                    <span className="text-[8px] sm:text-[9px] font-bold text-muted-foreground uppercase tracking-wider">INDISPONÍVEL</span>
+                  {/* Live indicator */}
+                  <div className="absolute top-2 right-2 z-10 flex items-center gap-1 px-1.5 sm:px-2 py-0.5 rounded-full bg-red-500/90 backdrop-blur-sm">
+                    <span className="relative flex h-1.5 w-1.5">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-white"></span>
+                    </span>
+                    <span className="text-[8px] sm:text-[9px] font-bold text-white uppercase tracking-wider">AO VIVO</span>
                   </div>
 
                   {/* Channel image */}
@@ -195,9 +199,13 @@ const TVPage = () => {
                     )}
                   </div>
 
-                  {/* Indisponível overlay */}
+                  {/* Hover play overlay */}
                   <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-background/40 backdrop-blur-sm">
-                    <span className="text-xs text-muted-foreground font-medium">Em breve</span>
+                    <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-primary/90 flex items-center justify-center shadow-lg shadow-primary/30">
+                      <svg className="w-4 h-4 sm:w-5 sm:h-5 text-primary-foreground ml-0.5" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M8 5v14l11-7z" />
+                      </svg>
+                    </div>
                   </div>
                 </button>
               );

@@ -14,10 +14,9 @@ import AudioSelectModal from "@/components/AudioSelectModal";
 import TrailerModal from "@/components/TrailerModal";
 import RequestModal from "@/components/RequestModal";
 import ReportModal from "@/components/ReportModal";
-// DetailAutoWarning disabled
+import DetailAutoWarning from "@/components/DetailAutoWarning";
 import LoginRequiredModal from "@/components/LoginRequiredModal";
 import WatchTogetherButton from "@/components/watch-together/WatchTogetherButton";
-import AdGateModal from "@/components/AdGateModal";
 import { fromSlug } from "@/lib/slugify";
 import { toSlug } from "@/lib/slugify";
 import {
@@ -47,36 +46,16 @@ const DetailsPage = ({ type }: DetailsPageProps) => {
   const [showRequest, setShowRequest] = useState(false);
   const [showReport, setShowReport] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
-  const [showAdGate, setShowAdGate] = useState(false);
-  const [pendingAudio, setPendingAudio] = useState<string | null>(null);
-  const [adsEnabled, setAdsEnabled] = useState(false);
-  const [isTestUser, setIsTestUser] = useState(false);
   const [inMyList, setInMyList] = useState(false);
-  const [hasVideo, setHasVideo] = useState<boolean | null>(true); // default to true so button works even if DB is slow
+  const [hasVideo, setHasVideo] = useState<boolean | null>(null); // null = loading
   const [activeProfileId, setActiveProfileId] = useState<string | null>(null);
 
-  // Load active profile + check ads config + test user
+  // Load active profile
   useEffect(() => {
     const stored = localStorage.getItem("lyneflix_active_profile");
     if (stored) {
       try { setActiveProfileId(JSON.parse(stored).id); } catch {}
     }
-    const withTimeout = <T,>(p: PromiseLike<T>, ms: number): Promise<T | null> =>
-      Promise.race([Promise.resolve(p), new Promise<null>((r) => setTimeout(() => r(null), ms))]);
-    // Check if ads enabled (with timeout)
-    withTimeout(
-      supabase.from("site_settings").select("value").eq("key", "ads_enabled").maybeSingle(),
-      3000
-    ).then((result) => {
-      if (result) {
-        const val = (result as any).data?.value;
-        if (val === true || val === "true") setAdsEnabled(true);
-      }
-    }).catch(() => {});
-    // Check if test user
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user?.email === "admin-st@gmail.com") setIsTestUser(true);
-    });
   }, []);
 
   useEffect(() => {
@@ -101,41 +80,28 @@ const DetailsPage = ({ type }: DetailsPageProps) => {
     setShowAudioModal(false);
     setShowTrailer(false);
     setHasVideo(null);
-
-    if (!id || id === 0) {
-      setLoading(false);
-      return;
-    }
-
     const fetcher = type === "movie" ? getMovieDetails : getSeriesDetails;
     fetcher(id).then((data) => {
       if (cancelled) return;
-      // Ensure genres is always an array
-      if (!data.genres) data.genres = [];
       setDetail(data);
       setLoading(false);
-      // Track view (non-blocking, fire-and-forget with timeout)
-      const withTimeout2 = <T,>(p: PromiseLike<T>, ms: number): Promise<T | null> =>
-        Promise.race([Promise.resolve(p), new Promise<null>((r) => setTimeout(() => r(null), ms))]);
-      withTimeout2(supabase.from("content_views").insert({
+      // Track view (non-blocking)
+      supabase.from("content_views").insert({
         tmdb_id: id,
         content_type: type === "movie" ? "movie" : "tv",
-      }), 3000).catch(() => {});
-      // Check if video exists in cache (with timeout, default stays true)
+      }).then(() => {});
+      // Check if video exists in cache
       const cType = type === "movie" ? "movie" : "series";
-      withTimeout2(
-        supabase.from("video_cache_safe").select("id").eq("tmdb_id", id).eq("content_type", cType).limit(1),
-        4000
-      ).then((result) => {
-        if (!cancelled && result) {
-          const cacheData = (result as any).data;
-          setHasVideo(!!(cacheData && cacheData.length > 0));
-        }
-      }).catch(() => { /* keep hasVideo as true (default) */ });
-    }).catch((err) => {
-      console.error("[DetailsPage] fetch error:", err);
-      if (!cancelled) setLoading(false);
-    });
+      supabase
+        .from("video_cache_safe")
+        .select("id")
+        .eq("tmdb_id", id)
+        .eq("content_type", cType)
+        .limit(1)
+        .then(({ data: cacheData }) => {
+          if (!cancelled) setHasVideo(!!(cacheData && cacheData.length > 0));
+        });
+    }).catch(() => { if (!cancelled) setLoading(false); });
 
     // Check for resolved reports for this visitor
     const vid = localStorage.getItem("_cf_vid");
@@ -182,34 +148,19 @@ const DetailsPage = ({ type }: DetailsPageProps) => {
     );
   }
 
-  const imdbId = detail?.imdb_id || detail?.external_ids?.imdb_id || null;
-  const cast = detail?.credits?.cast ?? [];
-  const similar = detail?.similar?.results ?? [];
-  const trailer = detail?.videos?.results?.find((v) => v.type === "Trailer" && v.site === "YouTube");
+  const imdbId = detail.imdb_id || detail.external_ids?.imdb_id || null;
+  const cast = detail.credits?.cast ?? [];
+  const similar = detail.similar?.results ?? [];
+  const trailer = detail.videos?.results.find((v) => v.type === "Trailer" && v.site === "YouTube");
 
   const handleWatchClick = () => {
+    // If user has a saved audio preference, skip the modal entirely
     const savedPref = localStorage.getItem("cineflow_audio_pref");
-    const audioToUse = savedPref || null;
-    // Show ad gate if ads enabled AND user is test user (admin-st@gmail.com)
-    if (adsEnabled && isTestUser) {
-      setPendingAudio(audioToUse);
-      setShowAdGate(true);
-      return;
-    }
-    if (audioToUse) {
-      handleAudioSelect(audioToUse);
+    if (savedPref) {
+      handleAudioSelect(savedPref);
       return;
     }
     setShowAudioModal(true);
-  };
-
-  const handleAdValidated = () => {
-    setShowAdGate(false);
-    if (pendingAudio) {
-      handleAudioSelect(pendingAudio);
-    } else {
-      setShowAudioModal(true);
-    }
   };
 
   // Prefetch: check if video is cached (existence only, no URL exposed)
@@ -262,7 +213,8 @@ const DetailsPage = ({ type }: DetailsPageProps) => {
         <div className="absolute inset-0 bg-gradient-to-r from-background/90 via-background/40 to-transparent" />
       </div>
 
-      {/* Auto warning disabled */}
+      {/* Auto warning for new site */}
+      <DetailAutoWarning />
 
       {/* Main Content */}
       <div className="relative -mt-32 sm:-mt-44 lg:-mt-52 z-10 px-3 sm:px-6 lg:px-12 pb-20">
@@ -322,7 +274,7 @@ const DetailsPage = ({ type }: DetailsPageProps) => {
 
             {/* Genres */}
             <div className="flex flex-wrap justify-center sm:justify-start gap-1.5 sm:gap-2 mb-3 sm:mb-4">
-              {(detail.genres || []).map((g) => (
+              {detail.genres.map((g) => (
                 <span key={g.id} className="px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg sm:rounded-xl bg-white/5 border border-white/10 text-[10px] sm:text-xs font-medium text-secondary-foreground">
                   {g.name}
                 </span>
@@ -344,7 +296,8 @@ const DetailsPage = ({ type }: DetailsPageProps) => {
               ) : (
                 <button
                   onClick={handleWatchClick}
-                  className="flex items-center gap-2 px-5 sm:px-7 py-2.5 sm:py-3 rounded-xl sm:rounded-2xl bg-primary text-primary-foreground font-semibold text-xs sm:text-sm hover:bg-primary/90 transition-all duration-300 hover:scale-105 hover:shadow-lg hover:shadow-primary/25"
+                  disabled={hasVideo === null}
+                  className="flex items-center gap-2 px-5 sm:px-7 py-2.5 sm:py-3 rounded-xl sm:rounded-2xl bg-primary text-primary-foreground font-semibold text-xs sm:text-sm hover:bg-primary/90 transition-all duration-300 hover:scale-105 hover:shadow-lg hover:shadow-primary/25 disabled:opacity-50 disabled:pointer-events-none"
                 >
                   <Play className="w-4 h-4 sm:w-5 sm:h-5 fill-current" />
                   Assistir Agora
@@ -512,13 +465,6 @@ const DetailsPage = ({ type }: DetailsPageProps) => {
         />
       )}
       {showLoginModal && <LoginRequiredModal onClose={() => setShowLoginModal(false)} />}
-      <AdGateModal
-        open={showAdGate}
-        onClose={() => setShowAdGate(false)}
-        onValidated={handleAdValidated}
-        contentTitle={detail ? getDisplayTitle(detail) : undefined}
-        tmdbId={detail?.id}
-      />
     </div>
   );
 };

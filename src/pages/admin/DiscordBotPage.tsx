@@ -14,7 +14,6 @@ interface DiscordConfig {
   auto_notify_new_content: boolean;
   welcome_message: string | null;
   site_url: string | null;
-  webhook_url: string | null;
 }
 
 interface BotLog {
@@ -417,33 +416,6 @@ const DiscordBotPage = () => {
                 ))}
               </div>
             )}
-          </div>
-
-          {/* Discord Webhook URL */}
-          <div className="glass-strong rounded-2xl p-5 space-y-3">
-            <h3 className="font-display font-bold flex items-center gap-2">
-              <Globe className="w-4 h-4" /> Webhook do Canal
-            </h3>
-            <p className="text-xs text-muted-foreground">
-              Cole a URL do Webhook do Discord (Configurações do Canal → Integrações → Webhooks). Lançamentos serão enviados também via webhook.
-            </p>
-            <div className="flex gap-2 items-end">
-              <div className="flex-1">
-                <label className="text-xs text-muted-foreground mb-1 block">Webhook URL</label>
-                <input
-                  value={config?.webhook_url || ""}
-                  onChange={(e) => setConfig(config ? { ...config, webhook_url: e.target.value } : null)}
-                  placeholder="https://discord.com/api/webhooks/..."
-                  className="w-full h-10 px-3 rounded-xl bg-white/5 border border-white/10 text-sm font-mono"
-                />
-              </div>
-              <button
-                onClick={() => updateConfig({ webhook_url: config?.webhook_url })}
-                className="h-10 px-4 rounded-xl bg-primary text-primary-foreground text-sm font-medium"
-              >
-                Salvar
-              </button>
-            </div>
           </div>
 
           {/* Toggles */}

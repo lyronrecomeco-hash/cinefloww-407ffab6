@@ -55,55 +55,6 @@ async function discordApi(path: string, method = "GET", body?: unknown) {
   return res.json();
 }
 
-// Send message with image as file attachment (not embed URL)
-async function discordSendWithImage(channelId: string, content: string, imageUrl?: string) {
-  const TOKEN = Deno.env.get("DISCORD_BOT_TOKEN")!;
-  const formData = new FormData();
-  
-  const payload: any = { content };
-  
-  if (imageUrl) {
-    try {
-      const imgRes = await fetch(imageUrl);
-      if (imgRes.ok) {
-        const imgBlob = await imgRes.blob();
-        const ext = imageUrl.includes(".png") ? "png" : "jpg";
-        formData.append("files[0]", imgBlob, `poster.${ext}`);
-        // No embeds — image is sent as direct attachment
-      }
-    } catch (e) { console.error("Failed to download poster:", e); }
-  }
-  
-  formData.append("payload_json", JSON.stringify(payload));
-  
-  const res = await fetch(`${DISCORD_API}/channels/${channelId}/messages`, {
-    method: "POST",
-    headers: { Authorization: `Bot ${TOKEN}` },
-    body: formData,
-  });
-  if (!res.ok) { const text = await res.text(); throw new Error(`Discord API ${res.status}: ${text}`); }
-  return res.json();
-}
-
-// Send via webhook with image attachment
-async function webhookSendWithImage(webhookUrl: string, content: string, imageUrl?: string) {
-  const formData = new FormData();
-  
-  if (imageUrl) {
-    try {
-      const imgRes = await fetch(imageUrl);
-      if (imgRes.ok) {
-        const imgBlob = await imgRes.blob();
-        formData.append("files[0]", imgBlob, "poster.jpg");
-      }
-    } catch (e) { console.error("Webhook image error:", e); }
-  }
-  
-  formData.append("payload_json", JSON.stringify({ content }));
-  
-  await fetch(webhookUrl, { method: "POST", body: formData });
-}
-
 async function logEvent(event: string, details?: string, extra?: Record<string, string>) {
   const sb = getSupabase();
   await sb.from("discord_bot_logs").insert({ event, details, guild_id: extra?.guild_id, channel_id: extra?.channel_id, user_tag: extra?.user_tag });
@@ -252,21 +203,20 @@ async function sendReleaseNotification() {
 
   const content = `${titleLine}${directorLine}${castLine}${genresLine}${synopsisLine}${linkLine}${footerLine}`;
 
-  // Download and send poster as file attachment (not URL embed)
-  const posterImageUrl = item.poster_path 
-    ? `https://image.tmdb.org/t/p/w500${item.poster_path}` 
-    : undefined;
+  // Use backdrop for wide image, fallback to poster
+  const imageUrl = item.backdrop_path 
+    ? `https://image.tmdb.org/t/p/w780${item.backdrop_path}` 
+    : item.poster_path 
+      ? `https://image.tmdb.org/t/p/w500${item.poster_path}` 
+      : undefined;
 
-  // Send via bot API with image attachment
-  await discordSendWithImage(config.notification_channel_id, content, posterImageUrl);
-  
-  // Also send via webhook if configured
-  if (config.webhook_url) {
-    try {
-      await webhookSendWithImage(config.webhook_url, content, posterImageUrl);
-    } catch (e) { console.error("Webhook error:", e); }
-  }
-  
+  const embed = {
+    color: 0x8B5CF6,
+    image: imageUrl ? { url: imageUrl } : undefined,
+    thumbnail: item.poster_path ? { url: `https://image.tmdb.org/t/p/w200${item.poster_path}` } : undefined,
+  };
+
+  await discordApi(`/channels/${config.notification_channel_id}/messages`, "POST", { content, embeds: [embed] });
   await logEvent("release_notified", item.title, { channel_id: config.notification_channel_id });
   return item.title;
 }
@@ -318,13 +268,12 @@ async function notifyNewContent(content: { title: string; tmdb_id: number; conte
 
   const msg = `${titleLine}\n\n${details}\n\n🔴 **LINK PARA ASSISTIR:** ${url}\n\n➡ Acesse **LyneFlix** — Filmes e séries GRÁTIS!\n➡ @here`;
 
-  const posterImageUrl = content.poster_path ? `https://image.tmdb.org/t/p/w500${content.poster_path}` : undefined;
-  await discordSendWithImage(config.notification_channel_id, msg, posterImageUrl);
-  
-  if (config.webhook_url) {
-    try { await webhookSendWithImage(config.webhook_url, msg, posterImageUrl); } catch {}
-  }
-  
+  const embed = {
+    color: 0x10B981,
+    image: content.poster_path ? { url: `https://image.tmdb.org/t/p/w500${content.poster_path}` } : undefined,
+  };
+
+  await discordApi(`/channels/${config.notification_channel_id}/messages`, "POST", { content: msg, embeds: [embed] });
   await logEvent("new_content_notified", content.title, { channel_id: config.notification_channel_id });
 }
 

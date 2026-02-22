@@ -201,7 +201,7 @@ const BancoPage = () => {
     }
   };
 
-  // Resolve ALL links via turbo-resolve — fires many parallel waves for max speed
+  // Resolve ALL links via server-side batch-resolve — fires rapidly, realtime updates UI
   const resolveAllLinks = async () => {
     setResolving(true);
     cancelRef.current = false;
@@ -209,46 +209,33 @@ const BancoPage = () => {
     // Get accurate count of unresolved
     const { count: totalContent } = await supabase.from("content").select("*", { count: "exact", head: true });
     const { count: cachedCount } = await supabase.from("video_cache").select("*", { count: "exact", head: true }).gt("expires_at", new Date().toISOString());
-    const totalToResolve = Math.max(0, (totalContent || 0) - (cachedCount || 0));
+    const { count: failedCount } = await supabase.from("resolve_failures").select("*", { count: "exact", head: true });
+    const totalToResolve = Math.max(0, (totalContent || 0) - (cachedCount || 0) - (failedCount || 0));
     setResolveProgress({ current: 0, total: totalToResolve });
 
     try {
-      // Fire turbo-resolve (clears failures + launches 15 parallel waves)
-      await supabase.functions.invoke("turbo-resolve");
-      
-    // Poll progress until done — longer patience for large batches
-    let consecutiveIdle = 0;
-    let lastResolved = 0;
-    const MAX_IDLE = 12; // Wait up to ~36s of no progress before stopping
-    
-    while (!cancelRef.current && consecutiveIdle < MAX_IDLE) {
-      await new Promise(r => setTimeout(r, 3000));
-      
-      const { count: nowCached } = await supabase.from("video_cache").select("*", { count: "exact", head: true }).gt("expires_at", new Date().toISOString());
-      const currentResolved = (nowCached || 0) - (cachedCount || 0);
-      
-      setResolveProgress({ current: Math.max(0, currentResolved), total: totalToResolve });
-      setStats(prev => ({
-        ...prev,
-        withVideo: nowCached || prev.withVideo,
-        withoutVideo: Math.max(0, prev.total - (nowCached || 0)),
-      }));
-      
-      if (currentResolved === lastResolved) {
-        consecutiveIdle++;
-        // Re-fire turbo-resolve to keep pushing
-        if (consecutiveIdle === 4 || consecutiveIdle === 8) {
-          supabase.functions.invoke("turbo-resolve").catch(() => {});
+      let consecutiveEmpty = 0;
+      while (!cancelRef.current && consecutiveEmpty < 3) {
+        const { data, error } = await supabase.functions.invoke("batch-resolve");
+        if (error) { console.error("[banco] batch-resolve error:", error); break; }
+
+        const batchResolved = data?.resolved || 0;
+        const batchFailed = data?.failed || 0;
+
+        // Update progress with actual resolved count
+        setResolveProgress(prev => ({ ...prev, current: prev.current + batchResolved + batchFailed }));
+
+        if (batchResolved === 0 && batchFailed === 0) {
+          consecutiveEmpty++;
+        } else {
+          consecutiveEmpty = 0;
         }
-      } else {
-        consecutiveIdle = 0;
-        lastResolved = currentResolved;
+        if (data?.message === "All items processed!") break;
       }
-    }
 
       toast({
         title: cancelRef.current ? "Resolução cancelada" : "Resolução concluída",
-        description: `${lastResolved} links resolvidos`,
+        description: `Processado com sucesso`,
       });
     } catch (e) {
       toast({ title: "Erro", description: "Falha na resolução", variant: "destructive" });
@@ -281,11 +268,11 @@ const BancoPage = () => {
   const startVcImport = async () => {
     setVcImporting(true);
     setVcProgress(null);
+    const items = await loadVcStats();
+    if (!items.length) { setVcImporting(false); return; }
     try {
-      // Don't send full JSON - let edge function fetch it from public URL
-      const siteUrl = window.location.origin;
       await supabase.functions.invoke("import-visioncine", {
-        body: { json_url: `${siteUrl}/data/visioncine_1.json`, offset: 0, batch_size: 100, auto: true },
+        body: { items, offset: 0, batch_size: 100, auto: true },
       });
     } catch { setVcImporting(false); }
   };

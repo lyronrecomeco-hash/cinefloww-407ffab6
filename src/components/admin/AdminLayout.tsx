@@ -3,7 +3,7 @@ import { useNavigate, useLocation, Outlet } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import {
   LayoutDashboard, Film, Tv, Sparkles, Drama, FolderOpen, ScrollText,
-  Settings, LogOut, Menu, X, ChevronRight, Database, MessageSquare, Bell, Shield, Bot, Radio, Users, BarChart3
+  Settings, LogOut, Menu, X, ChevronRight, Database, MessageSquare, Bell, Shield, Bot, Flag, Radio, Users
 } from "lucide-react";
 
 const menuItems = [
@@ -13,7 +13,7 @@ const menuItems = [
   { label: "Doramas", path: "/admin/doramas", icon: Drama },
   { label: "Animes", path: "/admin/animes", icon: Sparkles },
   { label: "Pedidos", path: "/admin/pedidos", icon: MessageSquare, badge: true },
-  { label: "ADS Métrica", path: "/admin/ads", icon: BarChart3 },
+  { label: "Reports", path: "/admin/reports", icon: Flag },
   { label: "Categorias", path: "/admin/categorias", icon: FolderOpen },
   { label: "Banco", path: "/admin/banco", icon: Database },
   { label: "Bot Discord", path: "/admin/discord", icon: Bot },
@@ -54,85 +54,37 @@ const AdminLayout = () => {
   const location = useLocation();
 
   useEffect(() => {
-    let isMounted = true;
+    const checkAuth = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) { navigate("/admin/login"); return; }
 
-    const checkAdminRole = async (userId: string) => {
-      try {
-        const { data } = await supabase
-          .from("user_roles")
-          .select("role")
-          .eq("user_id", userId)
-          .eq("role", "admin");
-        return !!(data && data.length > 0);
-      } catch {
-        return false;
-      }
+      const { data: roles } = await supabase
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", session.user.id)
+        .eq("role", "admin");
+
+      if (!roles?.length) { await supabase.auth.signOut(); navigate("/admin/login"); return; }
+      setUserEmail(session.user.email || "");
+      setLoading(false);
+
+      // Fetch initial pending count
+      const { count } = await supabase
+        .from("content_requests")
+        .select("*", { count: "exact", head: true })
+        .eq("status", "pending");
+      const c = count || 0;
+      setPendingRequests(c);
+      prevPendingRef.current = c;
     };
 
-    // Listener for ongoing auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (!isMounted) return;
+    checkAuth();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
       if (event === "SIGNED_OUT") navigate("/admin/login");
-      if (session?.user) {
-        setUserEmail(session.user.email || "");
-        setTimeout(() => {
-          if (isMounted) {
-            checkAdminRole(session.user.id).then(isAdmin => {
-              if (isMounted && !isAdmin) {
-                supabase.auth.signOut();
-                navigate("/admin/login");
-              }
-            });
-          }
-        }, 0);
-      }
     });
 
-    // Initial auth check
-    const initAuth = async () => {
-      try {
-        const { data: { session }, error: sessErr } = await supabase.auth.getSession();
-        if (!isMounted) return;
-        if (sessErr || !session) { navigate("/admin/login"); return; }
-
-        const isAdmin = await checkAdminRole(session.user.id);
-        if (!isMounted) return;
-        if (!isAdmin) {
-          try { await supabase.auth.signOut(); } catch {}
-          navigate("/admin/login");
-          return;
-        }
-
-        setUserEmail(session.user.email || "");
-
-        // Fetch initial pending count (non-blocking, with timeout)
-        const withTimeout = <T,>(p: PromiseLike<T>, ms: number): Promise<T | null> =>
-          Promise.race([Promise.resolve(p), new Promise<null>((r) => setTimeout(() => r(null), ms))]);
-        try {
-          const result = await withTimeout(
-            supabase.from("content_requests").select("*", { count: "exact", head: true }).eq("status", "pending"),
-            5000
-          );
-          if (isMounted && result) {
-            const c = (result as any).count || 0;
-            setPendingRequests(c);
-            prevPendingRef.current = c;
-          }
-        } catch {}
-      } catch (err) {
-        console.error("[AdminLayout] initAuth error:", err);
-        if (isMounted) navigate("/admin/login");
-      } finally {
-        if (isMounted) setLoading(false);
-      }
-    };
-
-    initAuth();
-
-    return () => {
-      isMounted = false;
-      subscription.unsubscribe();
-    };
+    return () => subscription.unsubscribe();
   }, [navigate]);
 
   // Real-time subscription for new requests
@@ -263,19 +215,19 @@ const AdminLayout = () => {
       {mobileOpen && (
         <div className="lg:hidden fixed inset-0 z-50">
           <div className="absolute inset-0 bg-background/80 backdrop-blur-sm" onClick={() => setMobileOpen(false)} />
-          <aside className="relative w-[260px] max-w-[85vw] h-full bg-card border-r border-white/10 flex flex-col overflow-y-auto">
+          <aside className="relative w-60 h-full bg-card border-r border-white/10 flex flex-col">
             <SidebarContent />
           </aside>
         </div>
       )}
 
       {/* Main content */}
-      <div className={`flex-1 flex flex-col min-w-0 transition-all duration-300 ${sidebarOpen ? "lg:ml-60" : "lg:ml-[68px]"}`}>
+      <div className={`flex-1 flex flex-col transition-all duration-300 ${sidebarOpen ? "lg:ml-60" : "lg:ml-[68px]"}`}>
         {/* Top bar */}
-        <header className="h-14 border-b border-white/10 bg-card/30 backdrop-blur-xl flex items-center px-3 sm:px-4 gap-2 sm:gap-3 sticky top-0 z-30">
+        <header className="h-14 border-b border-white/10 bg-card/30 backdrop-blur-xl flex items-center px-4 gap-3 sticky top-0 z-30">
           <button
             onClick={() => { if (window.innerWidth < 1024) setMobileOpen(true); else setSidebarOpen(!sidebarOpen); }}
-            className="w-9 h-9 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center hover:bg-white/10 transition-colors flex-shrink-0"
+            className="w-9 h-9 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center hover:bg-white/10 transition-colors"
           >
             {mobileOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
           </button>
@@ -283,18 +235,17 @@ const AdminLayout = () => {
           {pendingRequests > 0 && (
             <button
               onClick={() => navigate("/admin/pedidos")}
-              className="flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded-xl bg-primary/10 border border-primary/20 text-primary text-[10px] sm:text-xs font-medium hover:bg-primary/20 transition-colors"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-primary/10 border border-primary/20 text-primary text-xs font-medium hover:bg-primary/20 transition-colors"
             >
               <MessageSquare className="w-3.5 h-3.5" />
-              <span className="hidden xs:inline">{pendingRequests} pedido{pendingRequests > 1 ? "s" : ""}</span>
-              <span className="xs:hidden">{pendingRequests}</span>
+              {pendingRequests} pedido{pendingRequests > 1 ? "s" : ""}
             </button>
           )}
           <span className="text-xs text-muted-foreground hidden sm:block">Painel Administrativo</span>
         </header>
 
         {/* Page content */}
-        <main className="flex-1 p-3 sm:p-4 lg:p-6 overflow-x-hidden overflow-y-auto">
+        <main className="flex-1 p-4 lg:p-6 overflow-y-auto">
           <Outlet />
         </main>
       </div>

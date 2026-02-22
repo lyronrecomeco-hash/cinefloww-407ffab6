@@ -14,48 +14,19 @@ const MovieCard = ({ movie }: MovieCardProps) => {
   const title = getDisplayTitle(movie);
   const link = type === "movie" ? `/filme/${toSlug(title, movie.id)}` : `/serie/${toSlug(title, movie.id)}`;
   const [inactive, setInactive] = useState(false);
-  const [audioTypes, setAudioTypes] = useState<string[]>([]);
 
   useEffect(() => {
-    let cancelled = false;
     const cType = type === "movie" ? "movie" : "series";
-    const withTimeout = <T,>(p: PromiseLike<T>, ms: number): Promise<T | null> =>
-      Promise.race([Promise.resolve(p), new Promise<null>((r) => setTimeout(() => r(null), ms))]);
-
-    // Check content status (non-blocking, 4s timeout)
-    withTimeout(
-      supabase.from("content").select("status").eq("tmdb_id", movie.id).eq("content_type", cType).maybeSingle(),
-      4000
-    ).then((result) => {
-      if (!cancelled && result && (result as any).data?.status === "inactive") setInactive(true);
-    }).catch(() => {});
-
-    // Get audio types (non-blocking, 4s timeout)
-    withTimeout(
-      supabase.from("video_cache").select("audio_type").eq("tmdb_id", movie.id).eq("content_type", cType),
-      4000
-    ).then((result) => {
-      if (!cancelled && result) {
-        const data = (result as any).data;
-        if (data && data.length > 0) {
-          const types = [...new Set(data.map((r: any) => r.audio_type))] as string[];
-          setAudioTypes(types);
-        }
-      }
-    }).catch(() => {});
-
-    return () => { cancelled = true; };
+    supabase
+      .from("content")
+      .select("status")
+      .eq("tmdb_id", movie.id)
+      .eq("content_type", cType)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data?.status === "inactive") setInactive(true);
+      });
   }, [movie.id, type]);
-
-  // Determine badge: CAM takes priority warning, then DUB, then LEG
-  const getAudioBadge = () => {
-    if (audioTypes.includes("cam")) return { label: "CAM", className: "bg-orange-500/20 text-orange-400 border-orange-500/30" };
-    if (audioTypes.includes("dublado")) return { label: "DUB", className: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30" };
-    if (audioTypes.includes("legendado")) return { label: "LEG", className: "bg-sky-500/20 text-sky-400 border-sky-500/30" };
-    return null;
-  };
-
-  const audioBadge = getAudioBadge();
 
   const content = (
     <div className={`group flex-shrink-0 w-full ${inactive ? "opacity-50 pointer-events-none" : ""}`}>
@@ -67,13 +38,6 @@ const MovieCard = ({ movie }: MovieCardProps) => {
           loading="lazy"
         />
         <div className="absolute inset-0 bg-gradient-to-t from-background via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-
-        {/* Audio badge - top left */}
-        {audioBadge && (
-          <div className={`absolute top-1.5 left-1.5 sm:top-2 sm:left-2 px-1.5 sm:px-2 py-0.5 rounded-md backdrop-blur-md text-[8px] sm:text-[10px] font-bold uppercase tracking-wider border ${audioBadge.className}`}>
-            {audioBadge.label}
-          </div>
-        )}
 
         {movie.vote_average > 0 && (
           <div className="absolute top-1.5 right-1.5 sm:top-2 sm:right-2 flex items-center gap-0.5 sm:gap-1 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-md sm:rounded-lg bg-background/60 backdrop-blur-md text-[10px] sm:text-xs font-semibold border border-white/10">

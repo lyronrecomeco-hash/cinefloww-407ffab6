@@ -31,7 +31,6 @@ interface Props {
   roomMode: "chat" | "call";
   isHost: boolean;
   participants: Participant[];
-  participantNames: Record<string, string>;
   messages: Message[];
   profileId: string;
   profileName: string;
@@ -51,7 +50,7 @@ interface Props {
 }
 
 const RoomOverlay = ({
-  roomCode, roomMode, isHost, participants, participantNames, messages, profileId, profileName,
+  roomCode, roomMode, isHost, participants, messages, profileId, profileName,
   onLeave, onSendMessage, showControls,
   voiceCallActive, voiceMuted, voicePeers, voiceError,
   onToggleVoiceMute, onEndVoiceCall, onHostMute, onHostUnmute, onHostKick,
@@ -110,14 +109,6 @@ const RoomOverlay = ({
           <span>{participants.length}</span>
           {isHost && <Crown className="w-3 h-3 text-yellow-400" />}
         </button>
-
-        {/* Voice call active indicator with voice peer count */}
-        {isCallMode && voiceCallActive && (
-          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-green-500/15 backdrop-blur-md border border-green-500/20 text-green-400 text-[10px] font-bold">
-            <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
-            <span>{(voicePeers?.length || 0) + 1} na voz</span>
-          </div>
-        )}
       </div>
 
       {/* Participants panel */}
@@ -148,25 +139,17 @@ const RoomOverlay = ({
               <p className="text-[10px] text-white/25 uppercase tracking-wider mb-2 font-semibold">
                 Participantes ({participants.length})
               </p>
-              {participants.map(p => {
-                const displayName = p.profile_id === profileId 
-                  ? "Você" 
-                  : (participantNames[p.profile_id] || `Perfil ${p.profile_id.slice(0, 6)}`);
-                const initials = p.profile_id === profileId 
-                  ? profileName.slice(0, 2).toUpperCase()
-                  : (participantNames[p.profile_id] || p.profile_id).slice(0, 2).toUpperCase();
-                return (
+              {participants.map(p => (
                 <div key={p.id} className="flex items-center gap-2.5 py-2">
                   <div className="w-7 h-7 rounded-full bg-primary/15 flex items-center justify-center text-[10px] font-bold text-primary">
-                    {initials}
+                    {p.profile_id.slice(0, 2).toUpperCase()}
                   </div>
                   <span className="text-xs text-white/80 flex-1 truncate font-medium">
-                    {displayName}
+                    {p.profile_id === profileId ? "Você" : `Perfil ${p.profile_id.slice(0, 6)}`}
                   </span>
                   {p.role === "host" && <Crown className="w-3 h-3 text-yellow-400" />}
                 </div>
-                );
-              })}
+              ))}
             </div>
 
             <div className="p-3 border-t border-white/[0.06]">
