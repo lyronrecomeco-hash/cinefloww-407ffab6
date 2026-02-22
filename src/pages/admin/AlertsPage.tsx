@@ -4,7 +4,7 @@ import {
   Bell, Plus, Save, Trash2, Loader2, Eye, EyeOff,
   ExternalLink, X, Clock, ToggleLeft, ToggleRight, Send,
   Megaphone, AlertTriangle, Info, Gift, Shield, Sparkles,
-  Copy, Zap, Heart, Star, Radio, Volume2, Users, TrendingUp, Flag
+  Copy, Zap, Heart, Star, Radio, Volume2, Users, TrendingUp, Flag, WifiOff
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -285,6 +285,21 @@ const TEMPLATES = [
       button_link: "",
       button_style: "primary",
       interval_minutes: 2880,
+      active: false,
+    },
+  },
+  {
+    icon: WifiOff,
+    label: "Bloqueio DNS",
+    color: "text-orange-400",
+    bg: "bg-orange-500/10 border-orange-500/20",
+    data: {
+      title: "📡 Não consegue acessar o site?",
+      message: "Algumas operadoras de internet (Vivo, Claro, TIM, Oi) podem bloquear o acesso a determinados sites. Isso NÃO é um problema do site.\n\n✅ Solução rápida: Baixe o app gratuito 1.1.1.1 da Cloudflare, abra e toque em Conectar. Pronto, acesso liberado!\n\n📲 O app está disponível na Play Store e App Store.",
+      button_text: "Baixar 1.1.1.1",
+      button_link: "https://1.1.1.1",
+      button_style: "primary",
+      interval_minutes: 1440,
       active: false,
     },
   },
