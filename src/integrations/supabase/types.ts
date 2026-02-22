@@ -14,6 +14,36 @@ export type Database = {
   }
   public: {
     Tables: {
+      ad_clicks: {
+        Row: {
+          clicked_at: string
+          content_title: string | null
+          id: string
+          tmdb_id: number | null
+          user_email: string | null
+          validated: boolean
+          visitor_id: string
+        }
+        Insert: {
+          clicked_at?: string
+          content_title?: string | null
+          id?: string
+          tmdb_id?: number | null
+          user_email?: string | null
+          validated?: boolean
+          visitor_id: string
+        }
+        Update: {
+          clicked_at?: string
+          content_title?: string | null
+          id?: string
+          tmdb_id?: number | null
+          user_email?: string | null
+          validated?: boolean
+          visitor_id?: string
+        }
+        Relationships: []
+      }
       api_access_log: {
         Row: {
           accessed_at: string
@@ -355,6 +385,7 @@ export type Database = {
           notification_channel_id: string | null
           site_url: string | null
           updated_at: string
+          webhook_url: string | null
           welcome_message: string | null
         }
         Insert: {
@@ -366,6 +397,7 @@ export type Database = {
           notification_channel_id?: string | null
           site_url?: string | null
           updated_at?: string
+          webhook_url?: string | null
           welcome_message?: string | null
         }
         Update: {
@@ -377,6 +409,7 @@ export type Database = {
           notification_channel_id?: string | null
           site_url?: string | null
           updated_at?: string
+          webhook_url?: string | null
           welcome_message?: string | null
         }
         Relationships: []
@@ -812,6 +845,7 @@ export type Database = {
           created_at: string
           id: string
           is_default: boolean | null
+          is_kids: boolean
           name: string
           share_code: string | null
           updated_at: string
@@ -822,6 +856,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_default?: boolean | null
+          is_kids?: boolean
           name: string
           share_code?: string | null
           updated_at?: string
@@ -832,6 +867,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_default?: boolean | null
+          is_kids?: boolean
           name?: string
           share_code?: string | null
           updated_at?: string
@@ -893,45 +929,6 @@ export type Database = {
           created_at?: string
           episode?: number | null
           expires_at?: string
-          id?: string
-          provider?: string
-          season?: number | null
-          tmdb_id?: number
-          video_type?: string
-          video_url?: string
-        }
-        Relationships: []
-      }
-      video_cache_backup: {
-        Row: {
-          audio_type: string
-          backed_up_at: string
-          content_type: string
-          episode: number | null
-          id: string
-          provider: string
-          season: number | null
-          tmdb_id: number
-          video_type: string
-          video_url: string
-        }
-        Insert: {
-          audio_type?: string
-          backed_up_at?: string
-          content_type: string
-          episode?: number | null
-          id?: string
-          provider?: string
-          season?: number | null
-          tmdb_id: number
-          video_type?: string
-          video_url: string
-        }
-        Update: {
-          audio_type?: string
-          backed_up_at?: string
-          content_type?: string
-          episode?: number | null
           id?: string
           provider?: string
           season?: number | null
