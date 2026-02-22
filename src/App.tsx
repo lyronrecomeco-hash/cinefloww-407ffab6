@@ -7,6 +7,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { lazy, Suspense } from "react";
 import SiteAlertModal from "./components/SiteAlertModal";
 import OneTimeUpdateModal from "./components/OneTimeUpdateModal";
+import MaintenanceModal from "./components/MaintenanceModal";
 import Index from "./pages/Index";
 
 // Lazy load ALL non-index pages for faster initial load
