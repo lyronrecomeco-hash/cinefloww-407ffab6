@@ -15,7 +15,8 @@ Deno.serve(async (req) => {
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, serviceRoleKey);
 
-    const { email, password } = await req.json();
+    const { email, password, role } = await req.json();
+    const assignRole = role || "admin";
 
     // Create user
     const { data: userData, error: createError } = await supabase.auth.admin.createUser({
@@ -25,17 +26,15 @@ Deno.serve(async (req) => {
     });
 
     if (createError) {
-      // User might already exist
       if (createError.message.includes("already")) {
         const { data: { users } } = await supabase.auth.admin.listUsers();
         const user = users?.find((u: any) => u.email === email);
         if (user) {
-          // Assign admin role
-          const { error: roleError } = await supabase
+          await supabase
             .from("user_roles")
-            .upsert({ user_id: user.id, role: "admin" }, { onConflict: "user_id,role" });
+            .upsert({ user_id: user.id, role: assignRole }, { onConflict: "user_id,role" });
 
-          return new Response(JSON.stringify({ success: true, userId: user.id, roleError }), {
+          return new Response(JSON.stringify({ success: true, user_id: user.id }), {
             headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
         }
@@ -43,12 +42,11 @@ Deno.serve(async (req) => {
       throw createError;
     }
 
-    // Assign admin role
-    const { error: roleError } = await supabase
+    await supabase
       .from("user_roles")
-      .insert({ user_id: userData.user.id, role: "admin" });
+      .insert({ user_id: userData.user.id, role: assignRole });
 
-    return new Response(JSON.stringify({ success: true, userId: userData.user.id, roleError }), {
+    return new Response(JSON.stringify({ success: true, user_id: userData.user.id }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {

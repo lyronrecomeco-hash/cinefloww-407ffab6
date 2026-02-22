@@ -26,7 +26,6 @@ const menuItems = [
   { label: "Configurações", path: "/admin/config", icon: Settings },
 ];
 
-// Simple notification sound using Web Audio API
 const playNotificationSound = () => {
   try {
     const ctx = new AudioContext();
@@ -48,6 +47,8 @@ const AdminLayout = () => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [userEmail, setUserEmail] = useState("");
+  const [userRole, setUserRole] = useState<string>("admin");
+  const [allowedPaths, setAllowedPaths] = useState<string[]>([]);
   const [pendingRequests, setPendingRequests] = useState(0);
   const prevPendingRef = useRef(0);
   const navigate = useNavigate();
@@ -62,15 +63,32 @@ const AdminLayout = () => {
         if (!isMounted) return;
         if (!session) { navigate("/admin/login"); return; }
 
+        // Check admin or moderator role
         const { data: roles } = await supabase
           .from("user_roles")
           .select("role")
           .eq("user_id", session.user.id)
-          .eq("role", "admin");
+          .in("role", ["admin", "moderator"]);
 
         if (!isMounted) return;
         if (!roles?.length) { await supabase.auth.signOut(); navigate("/admin/login"); return; }
+
+        const role = roles[0].role;
+        setUserRole(role);
         setUserEmail(session.user.email || "");
+
+        // If moderator, load allowed paths
+        if (role === "moderator") {
+          const { data: perms } = await supabase
+            .from("admin_permissions")
+            .select("allowed_paths")
+            .eq("user_id", session.user.id)
+            .maybeSingle();
+
+          if (isMounted && perms?.allowed_paths) {
+            setAllowedPaths(perms.allowed_paths as string[]);
+          }
+        }
 
         // Fetch initial pending count (non-blocking)
         supabase
@@ -112,10 +130,8 @@ const AdminLayout = () => {
         { event: "INSERT", schema: "public", table: "content_requests" },
         () => {
           setPendingRequests((prev) => {
-            const newCount = prev + 1;
-            // Play sound for new request
             playNotificationSound();
-            return newCount;
+            return prev + 1;
           });
         }
       )
@@ -123,7 +139,6 @@ const AdminLayout = () => {
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "content_requests" },
         (payload) => {
-          // If status changed FROM pending, decrement
           if (payload.old && (payload.old as any).status === "pending" && (payload.new as any).status !== "pending") {
             setPendingRequests((prev) => Math.max(0, prev - 1));
           }
@@ -138,6 +153,11 @@ const AdminLayout = () => {
     await supabase.auth.signOut();
     navigate("/admin/login");
   };
+
+  // Filter menu items based on role and permissions
+  const visibleMenuItems = userRole === "admin"
+    ? menuItems
+    : menuItems.filter((item) => allowedPaths.includes(item.path));
 
   if (loading) {
     return (
@@ -165,7 +185,7 @@ const AdminLayout = () => {
 
       {/* Nav */}
       <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
-        {menuItems.map((item) => {
+        {visibleMenuItems.map((item) => {
           const isActive = location.pathname === item.path;
           return (
             <button
@@ -203,7 +223,7 @@ const AdminLayout = () => {
           {sidebarOpen && (
             <div className="flex-1 min-w-0">
               <p className="text-xs font-medium truncate">{userEmail}</p>
-              <p className="text-[10px] text-muted-foreground">Administrador</p>
+              <p className="text-[10px] text-muted-foreground capitalize">{userRole}</p>
             </div>
           )}
           {sidebarOpen && (
